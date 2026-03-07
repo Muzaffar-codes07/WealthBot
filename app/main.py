@@ -12,8 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.api.v1 import api_v1_router
 from app.core.config import settings
 from app.db.database import DatabaseManager
+from app.services.ml_service import MLService
 
 
 # =============================================================================
@@ -39,6 +41,7 @@ class RootResponse(BaseModel):
 # Application Lifespan
 # =============================================================================
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
@@ -50,9 +53,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     db_manager = DatabaseManager()
     await db_manager.initialize()
-    
+
+    # Preload ML model (non-blocking — logs warning if file is missing)
+    ml_service = MLService()
+    await ml_service.load_model()
+
     yield
-    
+
     # Shutdown
     await db_manager.close()
 
@@ -108,6 +115,13 @@ app.add_middleware(
     expose_headers=["X-Request-ID", "X-Process-Time"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
+
+
+# =============================================================================
+# API Routers
+# =============================================================================
+
+app.include_router(api_v1_router)
 
 
 # =============================================================================

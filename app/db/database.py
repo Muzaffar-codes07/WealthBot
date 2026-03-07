@@ -47,18 +47,28 @@ class DatabaseManager:
         return cls._instance
     
     @property
+    def _is_sqlite(self) -> bool:
+        """Check if the configured database is SQLite."""
+        return settings.database_url.startswith("sqlite")
+
+    @property
     def engine(self) -> AsyncEngine:
         """Get the database engine, creating if necessary."""
         if self._engine is None:
-            self._engine = create_async_engine(
-                settings.database_url,
-                pool_size=settings.db_pool_size,
-                max_overflow=settings.db_max_overflow,
-                pool_timeout=settings.db_pool_timeout,
-                pool_pre_ping=True,  # Enable connection health checks
-                echo=settings.debug,  # Log SQL in debug mode
-                future=True,
-            )
+            kwargs: dict = {
+                "echo": settings.debug,
+                "future": True,
+            }
+            if self._is_sqlite:
+                kwargs["connect_args"] = {"check_same_thread": False}
+            else:
+                kwargs.update(
+                    pool_size=settings.db_pool_size,
+                    max_overflow=settings.db_max_overflow,
+                    pool_timeout=settings.db_pool_timeout,
+                    pool_pre_ping=True,
+                )
+            self._engine = create_async_engine(settings.database_url, **kwargs)
         return self._engine
     
     @property
@@ -85,6 +95,14 @@ class DatabaseManager:
             return
         
         logger.info("Initializing database connection pool...")
+        
+        # Auto-create tables for SQLite (dev convenience)
+        if self._is_sqlite:
+            from app.db.models import Base
+
+            async with self.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("SQLite tables created / verified")
         
         # Verify connection by executing a simple query
         try:
