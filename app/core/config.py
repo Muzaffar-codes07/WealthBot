@@ -14,24 +14,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
-    
+
     Follows 12-factor app methodology for configuration management.
     """
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
-    
+
     # -------------------------------------------------------------------------
     # Application Settings
     # -------------------------------------------------------------------------
     app_env: str = Field(default="development", description="Application environment")
     debug: bool = Field(default=False, description="Debug mode flag")
     log_level: str = Field(default="INFO", description="Logging level")
-    
+
     # -------------------------------------------------------------------------
     # Database Configuration
     # -------------------------------------------------------------------------
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=5, description="Database connection pool size")
     db_max_overflow: int = Field(default=10, description="Max overflow connections")
     db_pool_timeout: int = Field(default=30, description="Pool connection timeout")
-    
+
     # -------------------------------------------------------------------------
     # Security Settings
     # -------------------------------------------------------------------------
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         default=30,
         description="Access token expiration time in minutes",
     )
-    
+
     # -------------------------------------------------------------------------
     # CORS Configuration
     # -------------------------------------------------------------------------
@@ -63,24 +63,44 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://localhost:8000",
         description="Comma-separated list of allowed CORS origins",
     )
-    
+
     @property
     def allowed_origins_list(self) -> List[str]:
         """Parse allowed origins string into a list."""
         return [origin.strip() for origin in self.allowed_origins.split(",")]
-    
+
     # -------------------------------------------------------------------------
     # ML Model Configuration
     # -------------------------------------------------------------------------
     model_path: str = Field(
         default="./ml/models/xgboost_spending_model.pkl",
-        description="Path to the XGBoost model artifact",
+        description="Path to the XGBoost model artifact (legacy pkl)",
+    )
+    xgboost_onnx_path: str = Field(
+        default="./ml/models/xgboost_spending.onnx",
+        description="Path to the XGBoost ONNX spending model",
+    )
+    categorizer_onnx_path: str = Field(
+        default="./ml/models/categorizer.onnx",
+        description="Path to the DistilBERT ONNX categorizer model",
+    )
+    tokenizer_path: str = Field(
+        default="./ml/models/tokenizer",
+        description="Path to the tokenizer directory",
+    )
+    label_encoder_path: str = Field(
+        default="./ml/models/label_encoder.json",
+        description="Path to the label encoder JSON",
+    )
+    feature_config_path: str = Field(
+        default="./ml/models/feature_config.json",
+        description="Path to the feature config JSON",
     )
     transformer_model_name: str = Field(
         default="distilbert-base-uncased",
         description="Hugging Face transformer model name",
     )
-    
+
     # -------------------------------------------------------------------------
     # PII Protection (GDPR/SOC 2 Compliance)
     # -------------------------------------------------------------------------
@@ -96,7 +116,7 @@ class Settings(BaseSettings):
         default="",
         description="Encryption key for sensitive data",
     )
-    
+
     # -------------------------------------------------------------------------
     # Validators
     # -------------------------------------------------------------------------
@@ -109,7 +129,7 @@ class Settings(BaseSettings):
         if upper_v not in valid_levels:
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return upper_v
-    
+
     @field_validator("app_env")
     @classmethod
     def validate_app_env(cls, v: str) -> str:
@@ -142,7 +162,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """
     Create cached settings instance.
-    
+
     Uses LRU cache to ensure settings are only loaded once.
     """
     return Settings()
