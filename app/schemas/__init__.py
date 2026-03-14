@@ -5,6 +5,16 @@ Request/Response schemas for API validation.
 """
 
 from app.schemas.common import MessageResponse, PaginatedResponse
+from app.schemas.insights import (
+    AIChatRequest,
+    AIChatResponse,
+    CategorySpendingComparison,
+    SpendingVelocityResponse,
+    StatementUploadResponse,
+    SubscriptionInsight,
+    SubscriptionsResponse,
+    WeeklyVelocityPoint,
+)
 from app.schemas.prediction import SafeToSpendResponse, SpendingPredictionResponse
 from app.schemas.transaction import (
     CategoryUpdateRequest,
@@ -22,11 +32,18 @@ from app.schemas.user import (
 
 __all__ = [
     "CategoryUpdateRequest",
+    "CategorySpendingComparison",
+    "AIChatRequest",
+    "AIChatResponse",
     "LoginRequest",
     "MessageResponse",
     "PaginatedResponse",
     "SafeToSpendResponse",
+    "SpendingVelocityResponse",
     "SpendingPredictionResponse",
+    "StatementUploadResponse",
+    "SubscriptionInsight",
+    "SubscriptionsResponse",
     "TokenResponse",
     "TransactionCreate",
     "TransactionResponse",
@@ -34,4 +51,5 @@ __all__ = [
     "UserCreate",
     "UserResponse",
     "UserUpdate",
+    "WeeklyVelocityPoint",
 ]
