@@ -2,19 +2,20 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import apiClient from '@/lib/api';
+import apiClient, { AUTH_TOKEN_KEY, REFRESH_TOKEN_KEY } from '@/lib/api';
 import type {
+  AIChatResponse,
   LoginRequest,
-  RegisterRequest,
-  TokenResponse,
-  UserProfile,
-  SafeToSpendData,
-  TransactionData,
   PaginatedResponse,
-  ApiResponse,
+  RegisterRequest,
+  SafeToSpendData,
+  SpendingVelocityResponse,
+  StatementUploadResponse,
+  SubscriptionsResponse,
+  TokenResponse,
+  TransactionData,
+  UserProfile,
 } from '@/types';
-
-const AUTH_TOKEN_KEY = 'auth_token';
 
 function getToken(): string | null {
   return typeof window !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
@@ -37,6 +38,7 @@ export function useLogin() {
     },
     onSuccess: (data) => {
       localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
@@ -73,6 +75,7 @@ export function useLogout() {
 
   return () => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
     queryClient.clear();
     router.push('/login');
   };
@@ -152,19 +155,30 @@ export function useUpdateTransactionCategory() {
 }
 
 // =============================================================================
-// Analytics Hooks (backend endpoints coming in Phase 3)
+// Analytics Hooks
 // =============================================================================
 
 export function useSpendingVelocity() {
   return useQuery({
     queryKey: ['spendingVelocity'],
     queryFn: async () => {
-      const { data } = await apiClient.get<ApiResponse<unknown[]>>(
+      const { data } = await apiClient.get<SpendingVelocityResponse>(
         '/api/v1/analytics/velocity',
       );
-      return data.data;
+      return {
+        weekly: data.weekly.map((point) => ({
+          ...point,
+          this_month: Number(point.this_month),
+          last_month: Number(point.last_month),
+        })),
+        categories: data.categories.map((item) => ({
+          ...item,
+          this_month: Number(item.this_month),
+          last_month: Number(item.last_month),
+        })),
+      };
     },
-    enabled: false, // Phase 3
+    enabled: !!getToken(),
   });
 }
 
@@ -172,12 +186,18 @@ export function useSubscriptions() {
   return useQuery({
     queryKey: ['subscriptions'],
     queryFn: async () => {
-      const { data } = await apiClient.get<ApiResponse<unknown[]>>(
+      const { data } = await apiClient.get<SubscriptionsResponse>(
         '/api/v1/analytics/subscriptions',
       );
-      return data.data;
+      return {
+        subscriptions: data.subscriptions.map((sub) => ({
+          ...sub,
+          amount: Number(sub.amount),
+        })),
+        total_monthly_commitment: Number(data.total_monthly_commitment),
+      };
     },
-    enabled: false, // Phase 3
+    enabled: !!getToken(),
   });
 }
 
@@ -192,11 +212,16 @@ export function useUploadStatement() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const { data } = await apiClient.post<ApiResponse<{ transactionCount: number }>>(
+      const { data } = await apiClient.post<StatementUploadResponse>(
         '/api/v1/statements/upload',
         formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
       );
-      return data.data;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -212,11 +237,11 @@ export function useUploadStatement() {
 export function useAIChat() {
   return useMutation({
     mutationFn: async (message: string) => {
-      const { data } = await apiClient.post<ApiResponse<unknown>>(
+      const { data } = await apiClient.post<AIChatResponse>(
         '/api/v1/ai/chat',
         { message },
       );
-      return data.data;
+      return data;
     },
   });
 }
