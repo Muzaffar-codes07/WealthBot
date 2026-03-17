@@ -4,7 +4,7 @@ Database models and connection management.
 """
 
 from app.db.database import DatabaseManager, get_db_session
-from app.db.models import Base, User, Transaction
+from app.db.models import Base, Transaction, User
 
 __all__ = [
     "DatabaseManager",

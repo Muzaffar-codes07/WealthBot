@@ -4,26 +4,37 @@ WealthBot API Entry Point
 FastAPI application with health checks, metadata, and CORS middleware.
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from time import perf_counter
+from uuid import uuid4
 
-from fastapi import FastAPI, status
+import structlog
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1 import api_v1_router
 from app.core.config import settings
+from app.core.logging import configure_logging
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.db.database import DatabaseManager
 from app.services.ml_service import MLService
 
+logger = structlog.get_logger("wealthbot.api")
 
 # =============================================================================
 # Response Models
 # =============================================================================
 
+
 class HealthResponse(BaseModel):
     """Health check response schema."""
+
     status: str
     version: str
     environment: str
@@ -32,6 +43,7 @@ class HealthResponse(BaseModel):
 
 class RootResponse(BaseModel):
     """Root endpoint response schema."""
+
     message: str
     version: str
     docs_url: str
@@ -56,14 +68,36 @@ _INSECURE_SECRETS = {
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Manage application startup and shutdown events.
-    
+
     - Startup: Initialize database connection pool
     - Shutdown: Close database connections gracefully
     """
+    _ = app
+
     # Security: warn if running with insecure secret key
     import logging
 
+    configure_logging()
     logger = logging.getLogger("wealthbot.security")
+
+    # Initialize Sentry (if enabled)
+    if settings.sentry_enabled and settings.sentry_dsn:
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+            from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+                traces_sample_rate=settings.sentry_traces_sample_rate,
+                environment=settings.app_env,
+                release="wealthbot@0.1.0",
+            )
+            logger.info("Sentry initialized (env=%s)", settings.app_env)
+        except Exception:
+            logger.warning("Failed to initialize Sentry — continuing without error tracking.")
+
     if settings.secret_key in _INSECURE_SECRETS:
         if settings.app_env in ("production", "staging"):
             raise RuntimeError(
@@ -81,13 +115,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     db_manager = DatabaseManager()
     await db_manager.initialize()
 
-    # Preload ML model (non-blocking — logs warning if file is missing)
+    # Preload ML models (non-blocking — logs warning if artifacts are missing)
     ml_service = MLService()
-    await ml_service.load_model()
+    await ml_service.load_models()
+
+    # Connect to Redis (if enabled)
+    if settings.redis_enabled:
+        from app.core.cache import redis_pool
+
+        await redis_pool.connect()
 
     yield
 
     # Shutdown
+    if settings.redis_enabled:
+        from app.core.cache import redis_pool
+
+        await redis_pool.close()
     await db_manager.close()
 
 
@@ -99,13 +143,13 @@ app = FastAPI(
     title="WealthBot API",
     description="""
     🏦 **WealthBot** - Predictive Personal Finance Application
-    
+
     ## Features
     * 💰 Smart transaction categorization using DistilBERT
     * 📊 Predictive spending analysis with XGBoost
     * 🛡️ Safe-to-Spend calculations
     * 🔐 GDPR/SOC 2 compliant data handling
-    
+
     ## API Modules
     * **Users** - User management and authentication
     * **Transactions** - Financial transaction tracking
@@ -128,6 +172,40 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# =============================================================================
+# Rate Limiting
+# =============================================================================
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+
+async def internal_server_error_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Return a safe 500 payload while preserving request correlation IDs."""
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception(
+        "unhandled_exception",
+        path=request.url.path,
+        method=request.method,
+        request_id=request_id,
+        error=str(exc),
+    )
+    payload = {
+        "detail": "Internal Server Error",
+    }
+    if request_id is not None:
+        payload["request_id"] = request_id
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=payload,
+    )
+
+
+app.add_exception_handler(Exception, internal_server_error_handler)
+
 
 # =============================================================================
 # CORS Middleware Configuration
@@ -143,6 +221,55 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.trusted_hosts_list,
+)
+
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=settings.gzip_minimum_size,
+)
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next) -> Response:
+    """Attach request IDs and consistent security headers to every response."""
+    request_id = str(uuid4())
+    request.state.request_id = request_id
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+
+    start = perf_counter()
+    try:
+        response = await call_next(request)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - verified via handler unit test
+        response = await internal_server_error_handler(request, exc)
+
+    duration_ms = round((perf_counter() - start) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(duration_ms)
+    response.headers["Strict-Transport-Security"] = (
+        f"max-age={settings.hsts_max_age}; includeSubDomains"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Structured request log
+    logger.info(
+        "request_completed",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        latency_ms=duration_ms,
+        request_id=request_id,
+    )
+
+    structlog.contextvars.clear_contextvars()
+    return response
+
 
 # =============================================================================
 # API Routers
@@ -154,6 +281,7 @@ app.include_router(api_v1_router)
 # =============================================================================
 # Core Endpoints
 # =============================================================================
+
 
 @app.get(
     "/",
@@ -185,7 +313,7 @@ async def root() -> RootResponse:
 async def health_check() -> JSONResponse:
     """
     Perform comprehensive health check.
-    
+
     Verifies:
     - Application is running
     - Database connectivity
@@ -193,7 +321,7 @@ async def health_check() -> JSONResponse:
     db_status = "healthy"
     overall_status = "healthy"
     status_code = status.HTTP_200_OK
-    
+
     try:
         db_manager = DatabaseManager()
         is_db_healthy = await db_manager.health_check()
@@ -205,14 +333,14 @@ async def health_check() -> JSONResponse:
         db_status = "unreachable"
         overall_status = "unhealthy"
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
     response_data = HealthResponse(
         status=overall_status,
         version="0.1.0",
         environment=settings.app_env,
         database=db_status,
     )
-    
+
     return JSONResponse(
         content=response_data.model_dump(),
         status_code=status_code,
@@ -239,13 +367,3 @@ async def readiness_check() -> dict[str, str]:
 async def liveness_check() -> dict[str, str]:
     """Simple liveness check for container orchestration."""
     return {"status": "alive"}
-
-
-# =============================================================================
-# Include API Routers (to be added as the project grows)
-# =============================================================================
-
-# from app.api.v1 import users, transactions, predictions
-# app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
-# app.include_router(transactions.router, prefix="/api/v1/transactions", tags=["Transactions"])
-# app.include_router(predictions.router, prefix="/api/v1/predictions", tags=["Predictions"])

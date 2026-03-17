@@ -5,7 +5,6 @@ Centralized configuration management using Pydantic Settings.
 """
 
 from functools import lru_cache
-from typing import List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -55,6 +54,10 @@ class Settings(BaseSettings):
         default=30,
         description="Access token expiration time in minutes",
     )
+    refresh_token_expire_days: int = Field(
+        default=7,
+        description="Refresh token expiration time in days",
+    )
 
     # -------------------------------------------------------------------------
     # CORS Configuration
@@ -63,11 +66,60 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://localhost:8000",
         description="Comma-separated list of allowed CORS origins",
     )
+    trusted_hosts: str = Field(
+        default="localhost,127.0.0.1,test,testserver",
+        description="Comma-separated list of trusted host headers",
+    )
+    gzip_minimum_size: int = Field(
+        default=1024,
+        description="Minimum response size in bytes before GZip compression",
+    )
+    hsts_max_age: int = Field(
+        default=31536000,
+        description="Strict-Transport-Security max-age value in seconds",
+    )
+
+    # -------------------------------------------------------------------------
+    # Observability (Sentry)
+    # -------------------------------------------------------------------------
+    sentry_dsn: str = Field(
+        default="",
+        description="Sentry DSN for error tracking (leave empty to disable)",
+    )
+    sentry_enabled: bool = Field(
+        default=False,
+        description="Enable Sentry error tracking",
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.1,
+        description="Sentry performance traces sample rate (0.0 to 1.0)",
+    )
+
+    # -------------------------------------------------------------------------
+    # Redis Configuration
+    # -------------------------------------------------------------------------
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL",
+    )
+    redis_enabled: bool = Field(
+        default=False,
+        description="Enable Redis for rate limiting and caching",
+    )
+    prediction_cache_ttl: int = Field(
+        default=300,
+        description="Safe-to-Spend prediction cache TTL in seconds",
+    )
 
     @property
-    def allowed_origins_list(self) -> List[str]:
+    def allowed_origins_list(self) -> list[str]:
         """Parse allowed origins string into a list."""
         return [origin.strip() for origin in self.allowed_origins.split(",")]
+
+    @property
+    def trusted_hosts_list(self) -> list[str]:
+        """Parse trusted hosts string into a list."""
+        return [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
 
     # -------------------------------------------------------------------------
     # ML Model Configuration

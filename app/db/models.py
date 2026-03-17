@@ -7,7 +7,6 @@ Database models for Users and Transactions with financial precision.
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -73,9 +72,9 @@ class User(Base):
     Stores user authentication and profile information with
     GDPR-compliant PII handling.
     """
-    
+
     __tablename__ = "users"
-    
+
     # Primary Key
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
@@ -83,7 +82,7 @@ class User(Base):
         default=lambda: str(uuid4()),
         comment="Unique user identifier (UUID)",
     )
-    
+
     # Authentication Fields
     email: Mapped[str] = mapped_column(
         String(255),
@@ -92,7 +91,7 @@ class User(Base):
         index=True,
         comment="User email address (unique)",
     )
-    email_hash: Mapped[Optional[str]] = mapped_column(
+    email_hash: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
         comment="SHA-256 hash of email for lookups without exposing PII",
@@ -102,19 +101,19 @@ class User(Base):
         nullable=False,
         comment="Bcrypt hashed password",
     )
-    
+
     # Profile Fields
-    first_name: Mapped[Optional[str]] = mapped_column(
+    first_name: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
         comment="User first name",
     )
-    last_name: Mapped[Optional[str]] = mapped_column(
+    last_name: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
         comment="User last name",
     )
-    
+
     # Account Status
     is_active: Mapped[bool] = mapped_column(
         Boolean,
@@ -134,14 +133,14 @@ class User(Base):
         nullable=False,
         comment="Whether user has admin privileges",
     )
-    
+
     # Financial Preferences
-    monthly_income: Mapped[Optional[Decimal]] = mapped_column(
+    monthly_income: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2),
         nullable=True,
         comment="User's monthly income for budgeting",
     )
-    savings_goal: Mapped[Optional[Decimal]] = mapped_column(
+    savings_goal: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2),
         nullable=True,
         comment="User's monthly savings goal",
@@ -152,7 +151,7 @@ class User(Base):
         nullable=False,
         comment="User's preferred currency (ISO 4217)",
     )
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -167,38 +166,38 @@ class User(Base):
         nullable=False,
         comment="Last update timestamp",
     )
-    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+    last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Last login timestamp",
     )
-    
+
     # GDPR Compliance
-    data_consent_at: Mapped[Optional[datetime]] = mapped_column(
+    data_consent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp when user consented to data processing",
     )
-    deletion_requested_at: Mapped[Optional[datetime]] = mapped_column(
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp when user requested account deletion",
     )
-    
+
     # Relationships
-    transactions: Mapped[List["Transaction"]] = relationship(
+    transactions: Mapped[list["Transaction"]] = relationship(
         "Transaction",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    
+
     # Indexes
     __table_args__ = (
         Index("ix_users_email_hash", "email_hash"),
         Index("ix_users_created_at", "created_at"),
     )
-    
+
     def __repr__(self) -> str:
         """String representation with masked email for security."""
         masked = self.email[:3] + "***" if self.email else "unknown"
@@ -216,9 +215,9 @@ class Transaction(Base):
     Uses Numeric(15,2) for precise financial calculations,
     supporting values up to 9,999,999,999,999.99.
     """
-    
+
     __tablename__ = "transactions"
-    
+
     # Primary Key
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
@@ -226,7 +225,7 @@ class Transaction(Base):
         default=lambda: str(uuid4()),
         comment="Unique transaction identifier (UUID)",
     )
-    
+
     # Foreign Key
     user_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
@@ -235,7 +234,7 @@ class Transaction(Base):
         index=True,
         comment="Reference to user who owns this transaction",
     )
-    
+
     # Transaction Details
     amount: Mapped[Decimal] = mapped_column(
         Numeric(15, 2),
@@ -261,31 +260,31 @@ class Transaction(Base):
         index=True,
         comment="Transaction category for budgeting",
     )
-    
+
     # Description & Metadata
-    description: Mapped[Optional[str]] = mapped_column(
+    description: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
         comment="Transaction description",
     )
-    merchant_name: Mapped[Optional[str]] = mapped_column(
+    merchant_name: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Merchant or payee name",
     )
-    notes: Mapped[Optional[str]] = mapped_column(
+    notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Additional user notes",
     )
-    
+
     # ML-Generated Fields
-    predicted_category: Mapped[Optional[str]] = mapped_column(
+    predicted_category: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         comment="ML-predicted category (DistilBERT)",
     )
-    category_confidence: Mapped[Optional[Decimal]] = mapped_column(
+    category_confidence: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 4),
         nullable=True,
         comment="Confidence score for predicted category (0-1)",
@@ -296,7 +295,7 @@ class Transaction(Base):
         nullable=False,
         comment="Whether transaction is recurring",
     )
-    
+
     # Date Fields
     transaction_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -304,7 +303,7 @@ class Transaction(Base):
         index=True,
         comment="Date when transaction occurred",
     )
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -319,32 +318,32 @@ class Transaction(Base):
         nullable=False,
         comment="Last update timestamp",
     )
-    
+
     # Relationships
     user: Mapped["User"] = relationship(
         "User",
         back_populates="transactions",
     )
-    
+
     # Indexes for common queries
     __table_args__ = (
         Index("ix_transactions_user_date", "user_id", "transaction_date"),
         Index("ix_transactions_user_category", "user_id", "category"),
         Index("ix_transactions_date_type", "transaction_date", "transaction_type"),
     )
-    
+
     def __repr__(self) -> str:
         """String representation."""
         return (
             f"<Transaction(id={self.id}, amount={self.amount}, "
             f"type={self.transaction_type}, category={self.category})>"
         )
-    
+
     @property
     def is_expense(self) -> bool:
         """Check if transaction is an expense."""
         return self.transaction_type == TransactionType.EXPENSE.value
-    
+
     @property
     def is_income(self) -> bool:
         """Check if transaction is income."""

@@ -5,7 +5,8 @@ Async PostgreSQL connection using SQLAlchemy 2.0 with Singleton pattern.
 """
 
 import logging
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -34,18 +35,18 @@ class DatabaseManager:
         async with db_manager.session() as session:
             result = await session.execute(query)
     """
-    
+
     _instance: Optional["DatabaseManager"] = None
-    _engine: Optional[AsyncEngine] = None
-    _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+    _engine: AsyncEngine | None = None
+    _session_factory: async_sessionmaker[AsyncSession] | None = None
     _initialized: bool = False
-    
+
     def __new__(cls) -> "DatabaseManager":
         """Ensure only one instance exists (Singleton pattern)."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     @property
     def _is_sqlite(self) -> bool:
         """Check if the configured database is SQLite."""
@@ -70,7 +71,7 @@ class DatabaseManager:
                 )
             self._engine = create_async_engine(settings.database_url, **kwargs)
         return self._engine
-    
+
     @property
     def session_factory(self) -> async_sessionmaker[AsyncSession]:
         """Get the session factory, creating if necessary."""
@@ -83,7 +84,7 @@ class DatabaseManager:
                 autocommit=False,
             )
         return self._session_factory
-    
+
     async def initialize(self) -> None:
         """
         Initialize the database connection pool.
@@ -93,9 +94,9 @@ class DatabaseManager:
         if self._initialized:
             logger.info("Database already initialized")
             return
-        
+
         logger.info("Initializing database connection pool...")
-        
+
         # Auto-create tables for SQLite (dev convenience)
         if self._is_sqlite:
             from app.db.models import Base
@@ -103,7 +104,7 @@ class DatabaseManager:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             logger.info("SQLite tables created / verified")
-        
+
         # Verify connection by executing a simple query
         try:
             async with self.session_factory() as session:
@@ -112,10 +113,10 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
-        
+
         self._initialized = True
         logger.info("Database initialization complete")
-    
+
     async def close(self) -> None:
         """
         Close all database connections.
@@ -129,7 +130,7 @@ class DatabaseManager:
             self._session_factory = None
             self._initialized = False
             logger.info("Database connections closed")
-    
+
     async def health_check(self) -> bool:
         """
         Perform a database health check.
@@ -144,7 +145,7 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
-    
+
     def session(self) -> AsyncSession:
         """
         Get a new async session.
