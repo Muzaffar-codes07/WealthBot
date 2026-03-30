@@ -7,6 +7,20 @@ export const metadata: Metadata = {
   description: 'AI-powered Safe-to-Spend predictions, smart transaction categorization, and spending analytics built for Indian students.',
   keywords: ['finance', 'safe-to-spend', 'students', 'AI', 'personal finance', 'India', 'UPI'],
   authors: [{ name: 'WealthBot Team' }],
+  icons: {
+    icon: '/favicon.svg',
+  },
+  openGraph: {
+    title: 'WealthBot - Predictive Personal Finance for Students',
+    description: 'AI-powered Safe-to-Spend predictions and spending analytics for Indian students.',
+    type: 'website',
+    siteName: 'WealthBot',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  manifest: '/manifest.json',
 };
 
 export const viewport: Viewport = {

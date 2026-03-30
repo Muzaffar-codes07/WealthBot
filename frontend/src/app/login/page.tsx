@@ -31,13 +31,11 @@ export default function LoginPage() {
         { email, password, first_name: firstName || undefined, last_name: lastName || undefined },
         {
           onSuccess: () => {
-            // Auto-login after registration
             loginMutation.mutate(
               { email, password },
               {
-                onSuccess: () => router.push('/'),
+                onSuccess: () => router.push('/dashboard'),
                 onError: () => {
-                  // Registration succeeded but auto-login failed — switch to login mode
                   setMode('login');
                   setError('Account created! Please log in.');
                 },
@@ -56,7 +54,7 @@ export default function LoginPage() {
       loginMutation.mutate(
         { email, password },
         {
-          onSuccess: () => router.push('/'),
+          onSuccess: () => router.push('/dashboard'),
           onError: (err) => {
             const msg =
               (err as { response?: { data?: { detail?: string } } }).response?.data
@@ -69,11 +67,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background-primary flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-background-primary flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Ambient background glow */}
+      <div className="absolute inset-0 bg-gradient-hero pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-full bg-accent-green flex items-center justify-center mb-3">
+        <div className="flex flex-col items-center mb-8 relative">
+          <div className="absolute -top-8 w-32 h-32 rounded-full glow-orange opacity-50 pointer-events-none" />
+          <div className="w-12 h-12 rounded-full bg-brand-primary flex items-center justify-center mb-3 relative">
             <span className="text-white font-bold text-xl">W</span>
           </div>
           <h1 className="text-2xl font-bold text-text-primary">WealthBot</h1>
@@ -83,7 +85,7 @@ export default function LoginPage() {
         </div>
 
         {/* Form card */}
-        <div className="card">
+        <div className="glass-card">
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -181,7 +183,7 @@ export default function LoginPage() {
                 Don&apos;t have an account?{' '}
                 <button
                   onClick={() => { setMode('register'); setError(null); }}
-                  className="text-accent-green hover:underline font-medium"
+                  className="text-brand-primary hover:underline font-medium"
                 >
                   Sign Up
                 </button>
@@ -191,7 +193,7 @@ export default function LoginPage() {
                 Already have an account?{' '}
                 <button
                   onClick={() => { setMode('login'); setError(null); }}
-                  className="text-accent-green hover:underline font-medium"
+                  className="text-brand-primary hover:underline font-medium"
                 >
                   Sign In
                 </button>

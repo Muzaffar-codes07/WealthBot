@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { MainLayout, Header } from '@/components/layout';
 import {
   Upload,
@@ -14,6 +14,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
+import { useUploadStatement } from '@/hooks';
 import { PRIVACY_LOGS } from '@/constants/data';
 import { formatCurrency } from '@/lib/utils';
 import type { AssistantMessage } from '@/types';
@@ -39,6 +40,9 @@ export default function SettingsPage() {
 
   const [netWorthInput, setNetWorthInput] = useState(netWorth.toString());
   const [messages, setMessages] = useState<AssistantMessage[]>(initialMessages);
+  const [uploadResult, setUploadResult] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadStatement = useUploadStatement();
 
   const handleSendMessage = (message: string) => {
     const newMessage: AssistantMessage = {
@@ -50,14 +54,28 @@ export default function SettingsPage() {
     setMessages([...messages, newMessage]);
   };
 
-  // Simulate statement upload processing
-  const handleUpload = useCallback(() => {
+  const handlePickFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) return;
+
     setStatementStatus('processing');
-    setTimeout(() => {
+    setUploadResult('');
+    try {
+      const result = await uploadStatement.mutateAsync(selectedFile);
       setStatementStatus('success');
+      setUploadResult(result.message);
       setTimeout(() => setStatementStatus('idle'), 3000);
-    }, 2500);
-  }, [setStatementStatus]);
+    } catch {
+      setStatementStatus('error');
+      setUploadResult('Upload failed. Please try a valid CSV statement.');
+    } finally {
+      event.target.value = '';
+    }
+  };
 
   const handleNetWorthSave = () => {
     const val = parseFloat(netWorthInput);
@@ -81,9 +99,9 @@ export default function SettingsPage() {
       {/* Magic Import Card — Upload Bank Statement                          */}
       {/* Prominent drop area with processing / success states               */}
       {/* ------------------------------------------------------------------ */}
-      <div className="card mb-6">
+      <div className="glass-card mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-accent-green/10 text-accent-green">
+          <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
             <FileText className="w-5 h-5" />
           </div>
           <div>
@@ -96,8 +114,8 @@ export default function SettingsPage() {
 
         {statementStatus === 'idle' && (
           <button
-            onClick={handleUpload}
-            className="w-full py-8 border-2 border-dashed border-border-secondary rounded-xl flex flex-col items-center gap-3 hover:border-accent-green hover:bg-accent-green/5 transition-all cursor-pointer"
+            onClick={handlePickFile}
+            className="w-full py-8 border-2 border-dashed border-border-secondary rounded-xl flex flex-col items-center gap-3 hover:border-brand-primary hover:bg-brand-primary/5 transition-all cursor-pointer"
           >
             <Upload className="w-8 h-8 text-text-muted" />
             <div className="text-center">
@@ -122,22 +140,41 @@ export default function SettingsPage() {
         )}
 
         {statementStatus === 'success' && (
-          <div className="w-full py-8 border-2 border-dashed border-accent-green/40 rounded-xl flex flex-col items-center gap-3 bg-accent-green/5">
-            <CheckCircle className="w-8 h-8 text-accent-green" />
-            <p className="text-sm font-medium text-accent-green">
+          <div className="w-full py-8 border-2 border-dashed border-semantic-success/40 rounded-xl flex flex-col items-center gap-3 bg-semantic-success/5">
+            <CheckCircle className="w-8 h-8 text-semantic-success" />
+            <p className="text-sm font-medium text-semantic-success">
               Statement imported successfully!
             </p>
             <p className="text-xs text-text-muted">47 transactions parsed</p>
           </div>
+        )}
+
+        {statementStatus === 'error' && (
+          <div className="w-full py-8 border-2 border-dashed border-status-error/40 rounded-xl flex flex-col items-center gap-3 bg-status-error/5">
+            <p className="text-sm font-medium text-status-error">Statement upload failed</p>
+            <p className="text-xs text-text-muted">Please upload a valid CSV statement file.</p>
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {uploadResult && (
+          <p className="text-xs text-text-muted mt-3">{uploadResult}</p>
         )}
       </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Privacy Log — terminal-style, builds trust for academic demo       */}
       {/* ------------------------------------------------------------------ */}
-      <div className="card mb-6 overflow-hidden">
+      <div className="glass-card mb-6 overflow-hidden">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-accent-green/10 text-accent-green">
+          <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
             <Terminal className="w-5 h-5" />
           </div>
           <div>
@@ -155,7 +192,7 @@ export default function SettingsPage() {
               <span
                 className={`shrink-0 w-2 h-2 rounded-full mt-1.5 ${
                   log.status === 'encrypted'
-                    ? 'bg-accent-green'
+                    ? 'bg-semantic-success'
                     : log.status === 'synced'
                     ? 'bg-status-info'
                     : 'bg-status-warning'
@@ -165,7 +202,7 @@ export default function SettingsPage() {
               <span
                 className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] ${
                   log.status === 'encrypted'
-                    ? 'text-accent-green bg-accent-green/10'
+                    ? 'text-semantic-success bg-semantic-success/10'
                     : log.status === 'synced'
                     ? 'text-status-info bg-status-info/10'
                     : 'text-status-warning bg-status-warning/10'
@@ -183,9 +220,9 @@ export default function SettingsPage() {
       {/* ------------------------------------------------------------------ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* Net Worth Manual Input */}
-        <div className="card">
+        <div className="glass-card">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-accent-green/10 text-accent-green">
+            <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
               <Shield className="w-5 h-5" />
             </div>
             <div>
@@ -223,9 +260,9 @@ export default function SettingsPage() {
         </div>
 
         {/* Developer Mode Toggle */}
-        <div className="card">
+        <div className="glass-card">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-accent-green/10 text-accent-green">
+            <div className="p-2 rounded-lg bg-brand-primary/10 text-brand-primary">
               <Eye className="w-5 h-5" />
             </div>
             <div>
@@ -241,7 +278,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between p-3 bg-background-secondary rounded-lg border border-border-primary">
             <div className="flex items-center gap-2">
               {devMode ? (
-                <Eye className="w-4 h-4 text-accent-green" />
+                <Eye className="w-4 h-4 text-brand-primary" />
               ) : (
                 <EyeOff className="w-4 h-4 text-text-muted" />
               )}
@@ -254,7 +291,7 @@ export default function SettingsPage() {
             <button
               onClick={() => setDevMode(!devMode)}
               className={`w-12 h-6 rounded-full transition-colors relative ${
-                devMode ? 'bg-accent-green' : 'bg-border-secondary'
+                devMode ? 'bg-brand-primary' : 'bg-border-secondary'
               }`}
             >
               <span
@@ -266,7 +303,7 @@ export default function SettingsPage() {
           </div>
 
           {devMode && (
-            <p className="text-xs text-accent-green mt-3 flex items-center gap-1">
+            <p className="text-xs text-brand-primary mt-3 flex items-center gap-1">
               <Lock className="w-3 h-3" />
               Confidence scores visible on Transactions page
             </p>
@@ -277,9 +314,9 @@ export default function SettingsPage() {
       {/* ------------------------------------------------------------------ */}
       {/* Security Info Footer                                               */}
       {/* ------------------------------------------------------------------ */}
-      <div className="card bg-accent-green/5 border-accent-green/20">
+      <div className="glass-card bg-semantic-success/5 border-semantic-success/20">
         <div className="flex items-center gap-3">
-          <Lock className="w-5 h-5 text-accent-green shrink-0" />
+          <Lock className="w-5 h-5 text-semantic-success shrink-0" />
           <div>
             <p className="text-sm font-medium text-text-primary">
               Bank-grade Security

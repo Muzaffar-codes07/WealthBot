@@ -98,7 +98,7 @@ export default function TransactionsPage() {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-accent-green" />
+          <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
         </div>
       </MainLayout>
     );
@@ -148,7 +148,7 @@ export default function TransactionsPage() {
       {/* Empty state                                                        */}
       {/* ------------------------------------------------------------------ */}
       {!txLoading && grouped.length === 0 && (
-        <div className="card text-center py-12 text-text-muted">
+        <div className="glass-card text-center py-12 text-text-muted">
           {debouncedSearch ? 'No transactions match your search.' : 'No transactions yet.'}
         </div>
       )}
@@ -163,7 +163,7 @@ export default function TransactionsPage() {
               {group.label}
             </h3>
 
-            <div className="card p-0 divide-y divide-border-primary overflow-hidden">
+            <div className="glass-card p-0 divide-y divide-border-primary overflow-hidden">
               {group.items.map((tx) => {
                 const config = CATEGORY_CONFIG[tx.category] || CATEGORY_CONFIG.Other;
                 const isEditing = editingId === tx.id;
@@ -196,7 +196,7 @@ export default function TransactionsPage() {
                                   updateCategory.mutate({ id: tx.id, category: cat });
                                   setEditingId(null);
                                 }}
-                                className="px-2 py-0.5 text-[10px] rounded-full border border-border-secondary text-text-secondary hover:bg-accent-green/20 hover:text-accent-green transition-colors"
+                                className="px-2 py-0.5 text-[10px] rounded-full border border-border-secondary text-text-secondary hover:bg-brand-primary/20 hover:text-brand-primary transition-colors"
                               >
                                 #{cat}
                               </button>
@@ -232,7 +232,7 @@ export default function TransactionsPage() {
                     {/* Amount */}
                     <span
                       className={`text-sm font-semibold shrink-0 ${
-                        tx.transaction_type === 'credit' ? 'text-accent-green' : 'text-text-primary'
+                        tx.transaction_type === 'credit' ? 'text-semantic-success' : 'text-text-primary'
                       }`}
                     >
                       {tx.transaction_type === 'credit' ? '+' : '-'}
@@ -242,7 +242,7 @@ export default function TransactionsPage() {
                     {/* Edit pencil */}
                     <button
                       onClick={() => setEditingId(isEditing ? null : tx.id)}
-                      className="p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-background-hover text-text-muted hover:text-accent-green transition-colors shrink-0"
+                      className="p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-background-hover text-text-muted hover:text-brand-primary transition-colors shrink-0"
                       title="Edit category"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -262,7 +262,7 @@ export default function TransactionsPage() {
           <button
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
             disabled={currentPage <= 1}
-            className="p-2 rounded-lg bg-background-card border border-border-primary disabled:opacity-30 hover:border-accent-green transition-colors"
+            className="p-2 rounded-lg bg-background-card border border-border-primary disabled:opacity-30 hover:border-brand-primary transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -272,7 +272,7 @@ export default function TransactionsPage() {
           <button
             onClick={() => setOffset(offset + PAGE_SIZE)}
             disabled={currentPage >= totalPages}
-            className="p-2 rounded-lg bg-background-card border border-border-primary disabled:opacity-30 hover:border-accent-green transition-colors"
+            className="p-2 rounded-lg bg-background-card border border-border-primary disabled:opacity-30 hover:border-brand-primary transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
