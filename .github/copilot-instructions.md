@@ -75,6 +75,8 @@ DB User:     (see .env file)
 DB Name:     wealthbot_db
 Extensions:  uuid-ossp, pg_trgm
 Key pins:    bcrypt==4.0.1 (passlib compat), asyncpg, sqlalchemy[asyncio]
+Test pins:   pytest-asyncio, pytest-cov, httpx (asyncio_mode="auto", PostgreSQL wealthbot_test DB)
+Infra pins:  slowapi>=0.1.9, structlog>=24.1.0, sonner (frontend toast)
 ML pins:     xgboost>=2.0.3, transformers>=4.37.0, torch>=2.9.0, scikit-learn>=1.4.0,
              onnxruntime>=1.17.0, joblib>=1.3.2, numpy>=1.26.3, pandas>=2.1.4
 ML runtime:  ONNX Runtime (CPU, 16GB RAM) — training on Google Colab (T4 GPU)
@@ -221,14 +223,15 @@ docker-compose up --build
 | `useSafeToSpend()` | `GET /safe-to-spend` | ✅ Working |
 | `useTransactions()` | `GET /transactions` | ✅ Working |
 | `useUpdateTransactionCategory()` | `PATCH /transactions/{id}` | ✅ Working |
-| `useSpendingVelocity()` | `GET /analytics/velocity` | ⏸ Disabled (Phase 3) |
-| `useSubscriptions()` | `GET /analytics/subscriptions` | ⏸ Disabled (Phase 3) |
-| `useUploadStatement()` | `POST /statements/upload` | ⏸ Disabled (Phase 3) |
-| `useAIChat()` | `POST /ai/chat` | ⏸ Disabled (Phase 3) |
+| `useSpendingVelocity()` | `GET /analytics/velocity` | ✅ Working |
+| `useSubscriptions()` | `GET /analytics/subscriptions` | ✅ Working |
+| `useUploadStatement()` | `POST /statements/upload` | ✅ Working |
+| `useAIChat()` | `POST /ai/chat` | ✅ Working |
 
-**Pages still using mock data** (to be wired in Phase 3):
-- `src/app/budgets/page.tsx` (Analytics / "Leakage Hunter") — subscriptions, velocity chart, spending stats from `constants/data.ts`
-- `src/app/investments/page.tsx` (Settings / "Vault & Settings") — statement upload uses local fake delay, privacy logs from mock
+**Pages now wired to live APIs:**
+- `src/app/budgets/page.tsx` → velocity + subscriptions from backend
+- `src/app/investments/page.tsx` → live statement CSV upload
+- `src/components/assistant/AuraAssistant.tsx` → live `/ai/chat`
 
 ### Phase 2.5 — Visual Testing & Responsiveness ✅ COMPLETE
 
@@ -259,7 +262,7 @@ Tested via Playwright MCP at three breakpoints:
 
 - **Aura toggle button unreachable when panel is open on mobile** — The panel (z-40) covers the header toggle button (z-30). Users must tap the backdrop overlay to close. UX improvement: add an explicit close (X) button inside the Aura panel header for mobile, or raise the header z-index above the panel.
 - **"1 Issue" Next.js dev badge** — Dev-only indicator, not a production issue.
-- **Analytics & Settings pages** — Still consume mock data from `constants/data.ts`. Need backend endpoints for velocity, subscriptions, and statement upload (Phase 3).
+- **PDF statement extraction is heuristic-first** — parser currently relies on common line patterns; bank-specific PDF templates may need adapters.
 
 ---
 
@@ -276,67 +279,112 @@ Tested via Playwright MCP at three breakpoints:
 - Step 9: `generate_synthetic_dataset(n_users=100, txns_per_user=100, seed=42) → pd.DataFrame` — ~14k Indian-student transactions (2 months, 100 users) with UPI merchants, ₹ amounts, temporal patterns (weekend food spikes, month-end crunch, recurring bills, post-salary looseness)
 - Step 10: 21-feature vector (`extract_user_features()` for inference, `build_training_matrix()` for training). Target: `next_7d_spending`. Feature config: `ml/models/feature_config.json`. Training matrix: 787 samples × 21 features
 
-#### Phase 3B — Model Training (Colab-compatible)
+#### Phase 3B — Model Training (Colab-compatible) ✅ COMPLETE
 | # | Deliverable | File | Status |
 |---|------------|------|--------|
-| 11 | **XGBoost spending predictor** | `ml/training/train_xgboost.py` | Not started |
-| 12 | **DistilBERT categorizer** | `ml/training/train_categorizer.py` | Not started |
+| 11 | **XGBoost spending predictor** | `ml/training/train_xgboost.py` | ✅ Done |
+| 12 | **DistilBERT categorizer** | `ml/training/train_categorizer.py` + `ml/training/train_categorizer_colab.ipynb` | ✅ Done |
 
-- Step 11: `XGBRegressor(n_estimators=200, max_depth=6, lr=0.1)`, 80/20 time-aware split, ONNX export via `onnxmltools` → `ml/models/xgboost_spending.onnx`
-- Step 12: Frozen base + classification head only, 10 epochs, batch_size=32, lr=5e-4, ONNX export → `ml/models/categorizer.onnx` + `tokenizer/` + `label_encoder.json`
+- Step 11: `XGBRegressor(n_estimators=200, max_depth=6, lr=0.1)`, 80/20 time-aware split, early stopping (best_iteration=36), ONNX export via `onnxmltools` → `ml/models/xgboost_spending.onnx` (78.4 KB). **Results:** MAE=₹688, RMSE=₹994, R²=0.9554. Top features: days_until_month_end, day_of_month, monthly_income
+- Step 12: Frozen base + classification head only (0.9% trainable), 10 epochs, batch=32, lr=5e-4, trained on Google Colab T4 GPU. ONNX export (single-file consolidation via `onnx.save_model`) → `ml/models/categorizer.onnx` (256 MB) + `ml/models/tokenizer/` + `ml/models/label_encoder.json` (15 categories). **Results:** val_acc=1.0000 by epoch 2
 
-#### Phase 3C — Inference & Integration
+#### Phase 3C — Inference & Integration ✅ COMPLETE
 | # | Deliverable | File | Status |
 |---|------------|------|--------|
-| 13 | **ONNX inference wrappers** | `ml/inference/predictor.py`, `ml/inference/categorizer.py` | Not started |
-| 14 | **MLService refactoring** | `app/services/ml_service.py` | Not started |
-| 15 | **Structured prediction logging** | Integrated into inference wrappers | Not started |
+| 13 | **ONNX inference wrappers** | `ml/inference/predictor.py`, `ml/inference/categorizer.py` | ✅ Done |
+| 14 | **MLService refactoring** | `app/services/ml_service.py` | ✅ Done |
+| 15 | **Structured prediction logging** | Integrated into inference wrappers | ✅ Done |
 
-- Step 13: `SpendingPredictor` (ort.InferenceSession → predict → prediction, lower_ci, upper_ci) + `TransactionCategorizer` (ONNX + tokenizer → category, confidence)
-- Step 14: Replace joblib with ONNX wrappers, add `categorize_transaction()`, preserve heuristic fallback
-- Step 15: JSON log per prediction — model, sanitized features, output, confidence, latency_ms, hashed user_id
+- Step 13: `SpendingPredictor` — ONNX Runtime CPUExecutionProvider, 21-feature float32 input, returns `(prediction, lower_ci, upper_ci)` using RMSE=994 for 95% CI. `TransactionCategorizer` — ONNX + HF tokenizer (max_length=64) + softmax → `(category, confidence)`. Smoke tests: predictor `(6194.44, 4246.20, 8142.68)` ✅, categorizer `('Food', 0.982)` for "Swiggy online food delivery" ✅
+- Step 14: Complete rewrite of `ml_service.py` — removed joblib/Pydantic models, added `load_models()` async startup, `predict_spending()` + `categorize_transaction()` via `functools.partial` + `run_in_executor`, heuristic fallback preserved. Auto-categorization added to `POST /transactions` — DistilBERT predicts inline when category defaults to OTHER (~5ms ONNX). `predictions.py` rewritten to use `extract_user_features()` for real 21-feature vector extraction from last 60 days of transactions
+- Step 15: Both inference wrappers emit structured JSON logs: model name, feature_summary/text_length, output, confidence/CI, latency_ms, hashed user_id (SHA-256). PII excluded
 
-#### Phase 3D — Configuration & Verification
+#### Phase 3D — Configuration & Verification ✅ COMPLETE
 | # | Deliverable | File | Status |
 |---|------------|------|--------|
-| 16 | **Config updates** | `config.py`, `requirements.txt`, `.env.example`, `main.py` | Not started |
-| 17 | **Training execution** | Run scripts, produce ONNX artifacts | Not started |
-| 18 | **Integration verification** | Startup, API responses, lint, types | Not started |
+| 16 | **Config updates** | `config.py`, `requirements.txt`, `.env.example`, `main.py` | ✅ Done |
+| 17 | **Training execution** | Run scripts, produce ONNX artifacts | ✅ Done (Phase 3B) |
+| 18 | **Integration verification** | Startup, API responses, lint, types | ✅ Done |
 
-- Step 16: Add `xgboost_onnx_path`, `categorizer_onnx_path`, `feature_config_path` to settings; add `onnxruntime>=1.17.0` to requirements
-- Step 17: Execute training scripts → produce `.onnx` + config files in `ml/models/`
-- Step 18: `GET /safe-to-spend` → `model_used: "xgboost"`, auto-categorization works, `mypy`/`ruff`/`pytest` pass
+- Step 16: Added 5 settings to `config.py`: `xgboost_onnx_path`, `categorizer_onnx_path`, `tokenizer_path`, `label_encoder_path`, `feature_config_path`. Added `onnxruntime>=1.17.0` to `requirements.txt`. Updated `.env.example` with all ML config keys. Changed `main.py` lifespan: `load_model()` → `load_models()`
+- Step 17: Completed in Phase 3B — all ONNX artifacts produced and verified
+- Step 18: **Verified:** FastAPI startup loads both models ✅. `GET /safe-to-spend` → `model_used: "heuristic"` (demo has 8 txns < 10 threshold, correct behavior). `POST /transactions` with Swiggy → auto-categorized as `Food` (0.982 confidence) ✅. `ruff check` ✅, `black` ✅, `mypy` zero errors in changed files (5 pre-existing in security.py/database.py) ✅
 
-### Phase 4 — Hardening
-19. **Test suite** — pytest cases for all API endpoints, services, and security module (target ≥80% coverage)
-20. **`slowapi` rate limiting** on `/ai/chat` and `/statements/upload`
-21. **`structlog`** integration for structured JSON logging across backend
+### Phase 4 — Hardening ✅ COMPLETE
+
+| # | Deliverable | Files Created/Modified | Status |
+|---|------------|----------------------|--------|
+| 19 | **Test suite (≥80% coverage)** | `tests/conftest.py` (rewrite), `tests/test_security.py`, `tests/test_ml_service.py`, `tests/test_users.py`, `tests/test_transactions.py`, `tests/test_predictions.py`, `tests/test_health.py`, `tests/test_logging.py` | ✅ Done |
+| 20 | **`slowapi` rate limiting** | `app/core/rate_limit.py`, `app/main.py` | ✅ Done |
+| 21 | **`structlog` integration** | `app/core/logging.py`, `app/main.py` | ✅ Done |
+| — | **Frontend 429 toast** | `frontend/src/lib/api.ts`, `frontend/src/components/providers/Providers.tsx` | ✅ Done |
+
+- Step 19: **70 tests, 80.96% coverage** against PostgreSQL (`wealthbot_test` DB). Tests: security (19), ml_service (16), users (12), transactions (12), predictions (5), health (4), logging (2). `conftest.py` fully rewritten — per-fixture engine creation (avoids event loop issues), `mock_ml_service` with deterministic outputs, `auth_headers`/`authed_client` fixtures. `pytest-asyncio` with `asyncio_mode="auto"`, function-scoped event loops
+- Step 20: `slowapi` Limiter with `get_remote_address` key_func. Custom JSON 429 handler returning `detail` + `retry_after`. Wired into `app.state.limiter` + exception handler in `main.py`. Ready for per-endpoint decorators (`@limiter.limit("5/minute")` on upload, `"20/minute"` on chat)
+- Step 21: `structlog` with shared processor chain (contextvars, log_level, logger_name, timestamper, stack_info, unicode). Environment-aware renderer: `JSONRenderer` for prod/staging, `ConsoleRenderer` for dev. `configure_logging()` called during FastAPI lifespan startup
+- Frontend: Axios response interceptor catches HTTP 429 → `toast.error()` via `sonner`. `<Toaster theme="dark" position="top-right" richColors />` in Providers
 
 ### Backlog (non-blocking improvements)
-- Wire Analytics page (`/budgets`) to live API once velocity/subscription endpoints exist
-- Wire Settings page (`/investments`) to live statement upload endpoint
 - Add explicit close button to Aura panel for mobile UX
+
+### Phase 5–8 — Road to Deployment (Current Plan)
+
+#### Phase 5 — API Completion & Frontend Wiring (In Progress)
+- 5A Backend endpoints:
+  - ✅ `GET /analytics/velocity`
+  - ✅ `GET /analytics/subscriptions`
+  - ✅ `POST /statements/upload` (`5/minute`, CSV + PDF parser)
+  - ✅ `POST /ai/chat` (`20/minute`, rule-based personalized replies)
+- 5B Frontend wiring:
+  - ✅ `budgets/page.tsx` wired to analytics APIs
+  - ✅ `investments/page.tsx` wired to statement upload API
+  - ✅ `AuraAssistant.tsx` wired to live `/ai/chat`
+  - ✅ Disabled React Query hooks enabled in `useApi.ts`
+- 5C Tests:
+  - ✅ Added endpoint integration tests for velocity, subscriptions, upload, and AI chat
+
+#### Phase 6 — Security & Auth Hardening
+- 6A Middleware in `main.py`: global 500 handler, security headers, TrustedHost, GZip, Request-ID
+- 6B Auth improvements: refresh token endpoint + frontend auto-refresh and session UX
+- 6C Tests for middleware and refresh flow
+
+#### Phase 7 — CI/CD & Infrastructure
+- 7A GitHub Actions: CI and deploy workflows + branch protection
+- 7B Docker production stack: auto-migrate entrypoint, frontend Dockerfile, nginx service/proxy
+- 7C Env config templates + deployment docs
+
+#### Phase 8 — Production Polish
+- 8A Frontend polish: image optimization, lazy charts, metadata, accessibility, mobile Aura close button
+- 8B Observability: request logging middleware + Sentry integration
+- 8C Final verification: clean compose boot, E2E smoke, load test, OWASP ZAP
 
 ---
 
 ## Session State
 
-> **Last updated:** 2026-03-08
+> **Last updated:** 2026-03-14
 
 **What happened this session:**
-- Implemented Phase 3A (Data Foundation) — both deliverables complete
-- Created `ml/models/feature_config.json` — 21-feature vector spec with category groups
-- Created `ml/preprocessing/synthetic_data.py` — generates ~14k Indian-student transactions (100 users × 2 months), deterministic seed, temporal patterns (weekend spikes, month-end crunch, salary week, Poisson daily txn count)
-- Created `ml/preprocessing/features.py` — `extract_user_features()` (inference) + `build_training_matrix()` (training), sliding-window snapshot builder (stride=3d), produces 787 samples × 21 features
-- All quality gates passed: `ruff check` ✅, `black --check` ✅, `mypy --ignore-missing-imports` ✅
-- Training artifacts saved: `ml/models/X_train.npy`, `ml/models/y_train.npy`, `ml/models/synthetic_transactions.csv`
+- Extended Phase 5 upload support from CSV-only to CSV + PDF
+  - Added PDF parser path in `app/api/v1/statements.py` with `pdfplumber`
+  - Added PDF upload integration test in `tests/test_phase5_endpoints.py`
+  - Updated dependency and env docs: `requirements.txt`, `.env.example`
+- Started Phase 6A hardening in `app/main.py`
+  - Added global 500 exception handler with safe JSON payload
+  - Added security headers middleware (HSTS, nosniff, frame deny)
+  - Added TrustedHost and GZip middleware
+  - Added request ID + process-time response headers via request context middleware
+  - Added middleware tests in `tests/test_phase6_middleware.py`
+- Verification for this session:
+  - `python -m pytest -q tests/test_phase5_endpoints.py tests/test_phase6_middleware.py` ✅
+  - `python -m ruff check app/api/v1/statements.py app/main.py app/core/config.py tests/test_phase5_endpoints.py tests/test_phase6_middleware.py` ✅
 
 **What's running:**
-- Backend: `uvicorn app.main:app --reload --port 8000`
+- Backend: `uvicorn app.main:app --port 8001`
 - Frontend: `cd frontend && npm run dev` on port 3000
 - DB: PostgreSQL 18 on localhost:5432
 
 **Next session should:**
-1. Begin Phase 3B — implement `ml/training/train_xgboost.py` (Step 11) and `ml/training/train_categorizer.py` (Step 12)
-2. Then Phase 3C — inference wrappers + MLService refactoring (Steps 13-15)
-3. Then Phase 3D — config updates + training execution + verification (Steps 16-18)
+1. Begin Phase 6B auth refresh flow (refresh endpoint + frontend token refresh behavior)
+2. Add middleware/request ID observability assertions into broader integration suite
+3. Run full repo quality gate (`ruff`, `mypy`, `pytest`, `tsc`) before next commit
