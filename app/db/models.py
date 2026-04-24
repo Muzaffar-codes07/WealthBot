@@ -147,7 +147,8 @@ class User(Base):
     )
     currency: Mapped[str] = mapped_column(
         String(3),
-        default="USD",
+        default="INR",
+        server_default="INR",
         nullable=False,
         comment="User's preferred currency (ISO 4217)",
     )
@@ -243,7 +244,8 @@ class Transaction(Base):
     )
     currency: Mapped[str] = mapped_column(
         String(3),
-        default="USD",
+        default="INR",
+        server_default="INR",
         nullable=False,
         comment="Transaction currency (ISO 4217)",
     )

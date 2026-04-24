@@ -1,0 +1,53 @@
+# VCS
+.git/
+.gitignore
+.github/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Frontend build artifacts (backend image doesn't need these)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Tests (not shipped to runtime image)
+tests/
+e2e/
+
+# Local state & dev DBs
+*.db
+*.sqlite3
+wealthbot_dev.db
+
+# Logs & temp
+*.log
+.DS_Store
+
+# ML training artifacts (weights are downloaded at startup from object storage)
+ml/models/*.npy
+ml/models/*.pkl
+
+# Secrets — belt-and-braces; .env should never be in build context
+.env
+.env.*
+!.env.example
+
+# Docs & editor noise
+*.md
+!README.md
+.vscode/
+.idea/
+
+# Plans / internal notes
+.claude/

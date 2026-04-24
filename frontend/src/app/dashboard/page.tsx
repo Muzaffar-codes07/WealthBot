@@ -23,7 +23,12 @@ function SafeToSpendGauge({ amount, max = 2000 }: { amount: number; max?: number
 
   return (
     <div className="flex flex-col items-center">
-      <svg viewBox="0 0 240 140" className="w-56 sm:w-72 h-32 sm:h-40">
+      <svg
+        viewBox="0 0 240 140"
+        className="w-56 sm:w-72 h-32 sm:h-40"
+        role="img"
+        aria-label={`Safe to spend today: ${formatCurrency(amount)}`}
+      >
         {/* Track */}
         <path
           d="M 20 130 A 100 100 0 0 1 220 130"
@@ -45,13 +50,29 @@ function SafeToSpendGauge({ amount, max = 2000 }: { amount: number; max?: number
           style={{ filter: `drop-shadow(0 0 8px ${color}40)` }}
         />
         {/* Center amount */}
-        <text x="120" y="105" textAnchor="middle" className="fill-white text-4xl font-bold" fontSize="36">
+        <text x="120" y="105" textAnchor="middle" className="fill-white text-4xl font-bold" fontSize="36" aria-hidden="true">
           ₹{amount.toLocaleString('en-IN')}
         </text>
-        <text x="120" y="128" textAnchor="middle" className="fill-slate-400 text-sm" fontSize="13">
+        <text x="120" y="128" textAnchor="middle" className="fill-slate-400 text-sm" fontSize="13" aria-hidden="true">
           Safe to Spend
         </text>
       </svg>
+    </div>
+  );
+}
+
+function GaugeError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center py-10 text-center">
+      <p className="text-sm text-text-secondary mb-3">
+        Couldn&apos;t fetch your Safe-to-Spend right now.
+      </p>
+      <button
+        onClick={onRetry}
+        className="flex items-center gap-1.5 text-sm text-brand-primary hover:underline"
+      >
+        <RefreshCw className="w-3.5 h-3.5" /> Retry
+      </button>
     </div>
   );
 }
@@ -98,7 +119,7 @@ const initialMessages: AssistantMessage[] = [
 
 export default function DashboardPage() {
   const { user, isLoading: authLoading } = useRequireAuth();
-  const { data: safeToSpend, isLoading: stsLoading, refetch: refetchSTS } = useSafeToSpend();
+  const { data: safeToSpend, isLoading: stsLoading, isError: stsError, refetch: refetchSTS } = useSafeToSpend();
   const { data: txPage, isLoading: txLoading } = useTransactions({ limit: 3 });
   const [messages, setMessages] = useState<AssistantMessage[]>(initialMessages);
 
@@ -140,8 +161,10 @@ export default function DashboardPage() {
       {/* Hero: Safe-to-Spend Gauge                                          */}
       {/* ------------------------------------------------------------------ */}
       <div className="glass-card flex flex-col items-center py-10 mb-6 relative overflow-hidden">
-        {stsLoading || !safeToSpend ? (
+        {stsLoading ? (
           <SkeletonGauge />
+        ) : stsError || !safeToSpend ? (
+          <GaugeError onRetry={() => refetchSTS()} />
         ) : (
           <>
             <div

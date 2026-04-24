@@ -13,8 +13,8 @@ Usage (pick one):
   python scripts/seed_dummy_account.py --direct
 
 Credentials:
-  Email:    student@wealthbot.in
-  Password: SecureDemo!2026
+  Set DEMO_EMAIL and DEMO_PASSWORD env vars (see DEMO_ACCESS.md).
+  The script refuses to run without them.
 """
 
 import argparse
@@ -33,8 +33,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # ── Account details ──────────────────────────────────────────────────────────
-DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "student@wealthbot.in")
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "SecureDemo!2026")
+DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "").strip()
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "").strip()
+if not DEMO_EMAIL or not DEMO_PASSWORD:
+    raise SystemExit(
+        "DEMO_EMAIL and DEMO_PASSWORD env vars are required. "
+        "See DEMO_ACCESS.md (gitignored) for local values."
+    )
 DEMO_FIRST_NAME = "Swarna"
 DEMO_LAST_NAME = "Student"
 DEMO_MONTHLY_INCOME = Decimal("50000.00")

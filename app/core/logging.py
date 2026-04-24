@@ -10,6 +10,14 @@ import sys
 import structlog
 
 from app.core.config import settings
+from app.core.security import sanitize_log_data
+
+
+def _pii_mask_processor(
+    _logger: object, _method: str, event_dict: dict[str, object]
+) -> dict[str, object]:
+    """Structlog processor that redacts secrets and masks PII in every log event."""
+    return sanitize_log_data(event_dict)  # type: ignore[return-value]
 
 
 def configure_logging() -> None:
@@ -25,6 +33,7 @@ def configure_logging() -> None:
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
+        _pii_mask_processor,
     ]
 
     if settings.app_env in ("production", "staging"):

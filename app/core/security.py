@@ -162,12 +162,16 @@ def decode_refresh_token(token: str) -> TokenPayload | None:
 # PII Protection (GDPR/SOC 2 Compliance)
 # =============================================================================
 
-# Common PII patterns for masking
+# PII patterns for masking — Indian market + globally common identifiers.
+# Ordering matters: credit_card must match before phone (shares digit runs);
+# email must match before UPI VPA (overlapping "@" syntax).
 PII_PATTERNS = {
-    "email": re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
-    "phone": re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"),
-    "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
     "credit_card": re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b"),
+    "aadhaar": re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b"),
+    "pan": re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b"),
+    "email": re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+    "upi_vpa": re.compile(r"\b[\w.\-]+@[a-z]{3,}\b"),
+    "phone_in": re.compile(r"\b(?:\+91[-\s]?)?[6-9]\d{9}\b"),
 }
 
 
@@ -192,15 +196,16 @@ def mask_pii(data: str, pattern_type: str | None = None) -> str:
         else PII_PATTERNS
     )
 
+    replacements = {
+        "credit_card": "****-****-****-****",
+        "aadhaar": "****-****-****",
+        "pan": "**********",
+        "email": "***@***.***",
+        "upi_vpa": "***@***",
+        "phone_in": "**********",
+    }
     for name, pattern in patterns.items():
-        if name == "email":
-            masked_data = pattern.sub("***@***.***", masked_data)
-        elif name == "phone":
-            masked_data = pattern.sub("***-***-****", masked_data)
-        elif name == "ssn":
-            masked_data = pattern.sub("***-**-****", masked_data)
-        elif name == "credit_card":
-            masked_data = pattern.sub("****-****-****-****", masked_data)
+        masked_data = pattern.sub(replacements.get(name, "***"), masked_data)
 
     return masked_data
 

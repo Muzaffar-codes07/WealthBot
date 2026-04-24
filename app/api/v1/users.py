@@ -18,6 +18,7 @@ from app.core.security import (
     create_refresh_token,
     decode_refresh_token,
     hash_password,
+    hash_pii,
     verify_password,
 )
 from app.db.database import get_db_session
@@ -47,11 +48,14 @@ users_router = APIRouter(prefix="/users", tags=["Users"])
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
 )
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     body: UserCreate,
     db: AsyncSession = Depends(get_db_session),
 ) -> User:
     """Create a new user account with hashed password."""
+    _ = request
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -61,6 +65,7 @@ async def register(
 
     user = User(
         email=body.email,
+        email_hash=hash_pii(body.email.lower()),
         hashed_password=hash_password(body.password),
         first_name=body.first_name,
         last_name=body.last_name,
@@ -79,11 +84,14 @@ async def register(
     response_model=TokenResponse,
     summary="Obtain JWT access and refresh tokens",
 )
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     body: LoginRequest,
     db: AsyncSession = Depends(get_db_session),
 ) -> TokenResponse:
     """Authenticate with email/password and receive access + refresh JWTs."""
+    _ = request
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 

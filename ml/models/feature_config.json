@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "feature_count": 21,
+  "target": "next_7d_spending",
+  "features": [
+    {"name": "day_of_month", "kind": "temporal"},
+    {"name": "day_of_week", "kind": "temporal"},
+    {"name": "is_weekend", "kind": "temporal"},
+    {"name": "days_until_month_end", "kind": "temporal"},
+    {"name": "is_salary_week", "kind": "temporal"},
+    {"name": "total_spending_7d", "kind": "spending_window"},
+    {"name": "total_spending_30d", "kind": "spending_window"},
+    {"name": "avg_daily_spending_7d", "kind": "spending_window"},
+    {"name": "avg_daily_spending_30d", "kind": "spending_window"},
+    {"name": "spending_trend", "kind": "spending_window"},
+    {"name": "max_single_txn_7d", "kind": "spending_window"},
+    {"name": "txn_count_7d", "kind": "spending_window"},
+    {"name": "txn_count_30d", "kind": "spending_window"},
+    {"name": "monthly_income", "kind": "income"},
+    {"name": "income_spent_ratio", "kind": "income"},
+    {"name": "days_since_last_income", "kind": "income"},
+    {"name": "food_pct", "kind": "category_ratio"},
+    {"name": "entertainment_pct", "kind": "category_ratio"},
+    {"name": "essential_pct", "kind": "category_ratio"},
+    {"name": "recurring_expense_total", "kind": "recurring"},
+    {"name": "balance_remaining", "kind": "balance"}
+  ],
+  "category_groups": {
+    "food": ["Food", "Coffee", "Groceries"],
+    "entertainment": ["Entertainment", "Shopping", "Travel"],
+    "essential": ["Housing", "Utilities", "Healthcare", "Insurance", "Transportation"]
+  }
+}

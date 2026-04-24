@@ -192,10 +192,44 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid environment: {v}. Must be one of {valid_envs}")
         return lower_v
 
+    _INSECURE_SECRET_MARKERS = (
+        "change",
+        "changeme",
+        "dev-secret",
+        "insecure",
+        "placeholder",
+        "secret-key",
+        "your-secret",
+    )
+
     @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
-        """Reject empty or well-known insecure secret keys in non-dev environments."""
+        """Reject empty, too-short, or well-known insecure secret keys in non-dev environments.
+
+        Runs unconditionally at Settings instantiation; use env var SKIP_SECRET_VALIDATION=1
+        only in CI smoke-tests where a stable dev secret is intentional.
+        """
+        import os
+
+        if os.getenv("SKIP_SECRET_VALIDATION") == "1":
+            return v
+        app_env = (os.getenv("APP_ENV") or "development").lower()
+        if app_env in ("staging", "production"):
+            if not v:
+                raise ValueError(
+                    "SECRET_KEY is not set. It is required in staging/production."
+                )
+            if len(v) < 32:
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters in staging/production."
+                )
+            low = v.lower()
+            if any(marker in low for marker in cls._INSECURE_SECRET_MARKERS):
+                raise ValueError(
+                    "SECRET_KEY contains a well-known insecure marker. "
+                    "Generate a fresh random key for staging/production."
+                )
         return v
 
     @field_validator("database_url")

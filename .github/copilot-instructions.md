@@ -362,9 +362,14 @@ Tested via Playwright MCP at three breakpoints:
 
 ## Session State
 
-> **Last updated:** 2026-03-14
+> **Last updated:** 2026-04-24
 
 **What happened this session:**
+- Fixed stale virtual environment path references after repo move from OneDrive to Desktop
+  - Updated `.venv` metadata and activation scripts to `C:\Users\Muzaffar\Desktop\WealthBot\.venv`
+  - Corrected script shebangs in `.venv/Scripts/jp.py`, `.venv/Scripts/dumppdf.py`, `.venv/Scripts/pdf2txt.py`
+- Verification for this session:
+  - PowerShell activation now resolves `VIRTUAL_ENV` as `C:\Users\Muzaffar\Desktop\WealthBot\.venv` ✅
 - Extended Phase 5 upload support from CSV-only to CSV + PDF
   - Added PDF parser path in `app/api/v1/statements.py` with `pdfplumber`
   - Added PDF upload integration test in `tests/test_phase5_endpoints.py`
@@ -375,7 +380,7 @@ Tested via Playwright MCP at three breakpoints:
   - Added TrustedHost and GZip middleware
   - Added request ID + process-time response headers via request context middleware
   - Added middleware tests in `tests/test_phase6_middleware.py`
-- Verification for this session:
+- Prior verification (from previous session):
   - `python -m pytest -q tests/test_phase5_endpoints.py tests/test_phase6_middleware.py` ✅
   - `python -m ruff check app/api/v1/statements.py app/main.py app/core/config.py tests/test_phase5_endpoints.py tests/test_phase6_middleware.py` ✅
 

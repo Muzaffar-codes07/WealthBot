@@ -62,6 +62,15 @@ export default function SettingsPage() {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
 
+    const ALLOWED = ['text/csv', 'application/vnd.ms-excel', 'application/pdf'];
+    const nameOk = /\.(csv|pdf)$/i.test(selectedFile.name);
+    if (!ALLOWED.includes(selectedFile.type) && !nameOk) {
+      setStatementStatus('error');
+      setUploadResult('Unsupported file. Please upload a CSV or PDF bank statement.');
+      event.target.value = '';
+      return;
+    }
+
     setStatementStatus('processing');
     setUploadResult('');
     try {

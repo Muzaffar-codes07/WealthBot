@@ -7,6 +7,7 @@
 .env.local
 .env.*.local
 *.env
+DEMO_ACCESS.md
 
 # Python
 __pycache__/
@@ -43,14 +44,19 @@ env/
 *.swo
 *~
 
-# ML Models (large files)
+# ML Models (large files — download-on-startup from object storage)
 ml/models/*.pkl
 ml/models/*.joblib
 ml/models/*.pt
 ml/models/*.bin
 ml/models/*.onnx
+ml/models/*.npy
 ml/models/tokenizer.zip
+ml/models/tokenizer/
 !ml/models/.gitkeep
+# feature_config.json must ship with code (single source of truth
+# for the train-serve 21-feature contract — see build_feature_config.py)
+!ml/models/feature_config.json
 
 # Data (sensitive)
 data/
@@ -58,6 +64,7 @@ data/
 *.parquet
 *.json
 !**/fixtures/*.json
+!ml/models/feature_config.json
 
 # Logs
 logs/

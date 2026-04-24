@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.db.database import DatabaseManager
+from app.services.artifact_loader import ensure_artifacts
 from app.services.ml_service import MLService
 
 logger = structlog.get_logger("wealthbot.api")
@@ -32,6 +33,13 @@ logger = structlog.get_logger("wealthbot.api")
 # =============================================================================
 
 
+class MLStatus(BaseModel):
+    """ML subsystem readiness."""
+
+    predictor_loaded: bool
+    categorizer_loaded: bool
+
+
 class HealthResponse(BaseModel):
     """Health check response schema."""
 
@@ -39,6 +47,7 @@ class HealthResponse(BaseModel):
     version: str
     environment: str
     database: str
+    ml: MLStatus
 
 
 class RootResponse(BaseModel):
@@ -115,9 +124,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     db_manager = DatabaseManager()
     await db_manager.initialize()
 
+    # Fetch ML artifacts from object storage (no-op when env vars unset)
+    from pathlib import Path as _Path
+
+    ensure_artifacts(_Path("./ml/models"))
+
     # Preload ML models (non-blocking — logs warning if artifacts are missing)
     ml_service = MLService()
     await ml_service.load_models()
+
+    # Warmup inference so the first user request doesn't pay cold-start latency
+    try:
+        if ml_service._model_loaded:
+            import numpy as _np
+
+            await ml_service.predict_spending(
+                _np.zeros(21, dtype=_np.float32), user_id="__warmup__"
+            )
+        if ml_service._categorizer_loaded:
+            await ml_service.categorize_transaction("warmup", user_id="__warmup__")
+    except Exception:
+        logger.exception("ML warmup inference failed — continuing anyway")
 
     # Connect to Redis (if enabled)
     if settings.redis_enabled:
@@ -334,11 +361,16 @@ async def health_check() -> JSONResponse:
         overall_status = "unhealthy"
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
+    ml_service = MLService()
     response_data = HealthResponse(
         status=overall_status,
         version="0.1.0",
         environment=settings.app_env,
         database=db_status,
+        ml=MLStatus(
+            predictor_loaded=bool(ml_service._model_loaded),
+            categorizer_loaded=bool(ml_service._categorizer_loaded),
+        ),
     )
 
     return JSONResponse(
@@ -351,11 +383,34 @@ async def health_check() -> JSONResponse:
     "/ready",
     tags=["Health"],
     summary="Readiness Check",
-    description="Kubernetes-style readiness probe.",
+    description="Returns 503 until the DB (and Redis, if enabled) are reachable.",
 )
-async def readiness_check() -> dict[str, str]:
-    """Simple readiness check for container orchestration."""
-    return {"status": "ready"}
+async def readiness_check() -> JSONResponse:
+    """Readiness probe: DB reachable + Redis reachable (when enabled)."""
+    reasons: list[str] = []
+    try:
+        db_manager = DatabaseManager()
+        if not await db_manager.health_check():
+            reasons.append("database unreachable")
+    except Exception as exc:
+        reasons.append(f"database error: {exc}")
+
+    if settings.redis_enabled:
+        try:
+            from app.core.cache import redis_pool
+
+            client = redis_pool.client
+            if client is None or not await client.ping():
+                reasons.append("redis unreachable")
+        except Exception as exc:
+            reasons.append(f"redis error: {exc}")
+
+    if reasons:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "not_ready", "reasons": reasons},
+        )
+    return JSONResponse(content={"status": "ready"})
 
 
 @app.get(

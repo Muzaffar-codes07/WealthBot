@@ -19,6 +19,7 @@ from app.db.database import get_db_session
 from app.db.models import Transaction, TransactionType, User
 from app.schemas.prediction import SafeToSpendResponse
 from app.services.ml_service import MLService, get_ml_service
+from ml.preprocessing.features import extract_user_features
 
 router = APIRouter(tags=["Predictions"])
 
@@ -104,9 +105,9 @@ async def safe_to_spend(
 
     if use_ml:
         # Fetch last 60 days of transactions for feature extraction
-        from ml.preprocessing.features import extract_user_features
+        from datetime import timedelta as _timedelta
 
-        cutoff = now - __import__("datetime").timedelta(days=60)
+        cutoff = now - _timedelta(days=60)
         txn_rows = await db.execute(
             select(Transaction)
             .where(
