@@ -20,9 +20,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies.
+#
+# IMPORTANT: install CPU-only torch FIRST from PyTorch's CPU index. The
+# default torch wheel on PyPI (Linux x86_64) declares the nvidia-* CUDA
+# packages as required deps and balloons the image by ~3 GB. The +cpu
+# variant does not declare those deps. Once torch is installed and meets
+# the >=2.9.0 constraint, the next pip install sees it satisfied and
+# doesn't reinstall — keeping the image lean.
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------------------------------------------------------
