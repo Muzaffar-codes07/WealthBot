@@ -5,6 +5,7 @@ Centralized configuration management using Pydantic Settings.
 """
 
 from functools import lru_cache
+from typing import ClassVar
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -192,7 +193,10 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid environment: {v}. Must be one of {valid_envs}")
         return lower_v
 
-    _INSECURE_SECRET_MARKERS = (
+    # ClassVar so Pydantic v2 treats this as a true class constant, not a
+    # PrivateAttr (underscore-prefixed bare attrs become unwrappable PrivateAttr
+    # instances and iterating them raises TypeError at validator time).
+    _INSECURE_SECRET_MARKERS: ClassVar[tuple[str, ...]] = (
         "change",
         "changeme",
         "dev-secret",
