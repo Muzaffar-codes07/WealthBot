@@ -51,7 +51,7 @@ from transformers import (  # type: ignore[attr-defined]
 # =============================================================================
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-CSV_PATH = MODELS_DIR / "synthetic_transactions.csv"
+CSV_PATH = Path(__file__).resolve().parent / "synthetic_transactions.csv"
 ONNX_OUTPUT_PATH = MODELS_DIR / "categorizer.onnx"
 TOKENIZER_OUTPUT_DIR = MODELS_DIR / "tokenizer"
 LABEL_ENCODER_PATH = MODELS_DIR / "label_encoder.json"
