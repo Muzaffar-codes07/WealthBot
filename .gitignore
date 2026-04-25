@@ -67,6 +67,7 @@ data/
 *.json
 !**/fixtures/*.json
 !ml/models/feature_config.json
+!vercel.json
 
 # Logs
 logs/
