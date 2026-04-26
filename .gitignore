@@ -68,6 +68,10 @@ data/
 !**/fixtures/*.json
 !ml/models/feature_config.json
 !vercel.json
+# Frontend Next.js config — must travel with the repo so Vercel can build.
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
 
 # Logs
 logs/
