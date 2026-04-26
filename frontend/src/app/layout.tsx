@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
-  manifest: '/manifest.json',
+  // manifest: '/manifest.json',  // re-enable once a real PWA manifest ships in frontend/public/
 };
 
 export const viewport: Viewport = {

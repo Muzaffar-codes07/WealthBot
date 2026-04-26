@@ -18,7 +18,12 @@ alembic>=1.13.1
 # Security
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.1.2
+# bcrypt pinned <4.0 — passlib 1.7.4 (last release, 2019) is incompatible with
+# bcrypt 4.x+ because passlib's detect_wrap_bug initialization runs a >72-byte
+# test password that modern bcrypt rejects, breaking ALL pwd_context.hash()
+# calls. Combined with bcrypt_sha256 scheme in app/core/security.py for
+# unlimited user-side password length.
+bcrypt>=3.2.0,<4.0
 
 # ML/AI
 xgboost>=2.0.3

@@ -20,9 +20,13 @@ from app.core.config import settings
 # =============================================================================
 
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    # bcrypt_sha256: SHA-256 pre-hashes the password before bcrypt, removing
+    # bcrypt's 72-byte input limit. Industry standard. Listing legacy "bcrypt"
+    # second + deprecated="auto" lets passlib verify any pre-existing bcrypt
+    # hashes and transparently re-hash them on the next successful login.
+    schemes=["bcrypt_sha256", "bcrypt"],
     deprecated="auto",
-    bcrypt__rounds=12,  # Increased for better security
+    bcrypt_sha256__rounds=12,
 )
 
 
