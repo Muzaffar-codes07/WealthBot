@@ -51,6 +51,15 @@ class RedisPool:
         """Check if Redis is connected."""
         return self._redis is not None
 
+    @property
+    def client(self) -> Any:
+        """Expose the underlying async Redis client (None if not connected).
+
+        Used by the /ready probe to issue a ping. Most callers should use the
+        wrapper methods (get/set/delete) instead.
+        """
+        return self._redis
+
     async def get(self, key: str) -> str | None:
         """Get a value from Redis."""
         if not self.available:
