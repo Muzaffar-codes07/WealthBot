@@ -168,7 +168,7 @@ export default function SettingsPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.pdf"
           className="hidden"
           onChange={handleFileChange}
         />

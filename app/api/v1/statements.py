@@ -19,6 +19,7 @@ from app.core.rate_limit import limiter
 from app.db.database import get_db_session
 from app.db.models import Transaction, TransactionCategory, TransactionType, User
 from app.schemas.insights import StatementUploadResponse
+from app.services.ml_service import MLService, get_ml_service
 
 router = APIRouter(prefix="/statements", tags=["Statements"])
 
@@ -27,6 +28,25 @@ PDF_ROW_PATTERN = re.compile(
     r"(?P<description>.+?)\s+"
     r"(?P<amount>-?\d[\d,]*(?:\.\d{1,2})?)"
     r"(?:\s+(?P<type>CR|DR|CREDIT|DEBIT))?$",
+    flags=re.IGNORECASE,
+)
+
+# Keywords that indicate an income/credit transaction
+_INCOME_KEYWORDS = re.compile(
+    r"(?:SALARY|REFUND|CASHBACK|REVERSAL|INTEREST\s*CREDIT|DIVIDEND|"
+    r"REWARD|CREDIT\s*FROM|NEFT\s*CR|RTGS\s*CR|IMPS\s*CR)",
+    flags=re.IGNORECASE,
+)
+
+# Prefix pattern for Indian bank narrations: UPI-, IMPS-, NEFT-, POS-, etc.
+_BANK_PREFIX = re.compile(
+    r"^(?:UPI|IMPS|NEFT|RTGS|POS|ATM|ECS|NACH|MMT|BIL|CMS|ACH)[-/]",
+    flags=re.IGNORECASE,
+)
+
+# Phone numbers, VPA handles, reference numbers to strip from display
+_NOISE_PATTERNS = re.compile(
+    r"(?:\d{10,}|[a-zA-Z0-9._%+-]+@[a-z]+|Ref\s*(?:No)?\.?\s*\d+)",
     flags=re.IGNORECASE,
 )
 
@@ -106,6 +126,71 @@ def _parse_pdf_rows(content: bytes) -> list[dict[str, str]]:
     return rows
 
 
+def _extract_merchant_name(raw_description: str) -> str:
+    """Extract a clean, human-readable merchant name from a raw bank narration.
+
+    Examples:
+        UPI-SWIGGY*INSTAMART-ORDER       → Swiggy Instamart
+        POS-APOLLO-PHARMACY-HYD           → Apollo Pharmacy
+        IMPS-FRIEND-SPLITWISE-REFUND      → Splitwise
+        UPI-RAPIDO-BIKE-RIDE-998...@paytm → Rapido Bike Ride
+        NEFT-SALARY-APR-2025              → Salary Apr 2025
+        AWS-CLOUD-SERVICES-BILLING        → Aws Cloud Services
+    """
+    text = raw_description.strip()
+
+    # 1. Strip common bank prefixes (UPI-, IMPS-, POS-, etc.)
+    text = _BANK_PREFIX.sub("", text)
+
+    # 2. Strip trailing noise (phone numbers, VPA handles, ref numbers)
+    text = _NOISE_PATTERNS.sub("", text)
+
+    # 3. Replace hyphens and asterisks with spaces
+    text = text.replace("-", " ").replace("*", " ").replace("_", " ")
+
+    # 4. Collapse whitespace and strip
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 5. Remove trailing single-word city codes (HYD, MUM, BLR, DEL, etc.)
+    # Only strip if the remaining text has more than 2 words
+    words = text.split()
+    if len(words) > 2:
+        last = words[-1].upper()
+        # Common 3-letter Indian city/airport codes and suffixes
+        city_codes = {
+            "HYD", "MUM", "BLR", "DEL", "CHN", "KOL", "PUN", "BOM",
+            "AMD", "GOA", "JAI", "LKO", "AMB", "IND", "NAG", "PAT",
+            "MUMBAI", "DELHI", "HYDERABAD", "BANGALORE", "CHENNAI",
+            "KOLKATA", "PUNE", "ORDER", "BILLING", "PAYMENT",
+        }
+        if last in city_codes:
+            words = words[:-1]
+        text = " ".join(words)
+
+    # 6. Title-case
+    text = text.title()
+
+    return text if text else raw_description.strip()
+
+
+def _clean_description(raw: str) -> str:
+    """Clean a raw bank narration into a readable description."""
+    text = raw.strip()
+    text = text.replace("-", " ").replace("*", " ").replace("_", " ")
+    text = _NOISE_PATTERNS.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.title() if text else raw.strip()
+
+
+def _detect_income(description: str, tx_type: str) -> str:
+    """Check if the narration indicates an income transaction."""
+    if tx_type == TransactionType.INCOME.value:
+        return tx_type
+    if _INCOME_KEYWORDS.search(description):
+        return TransactionType.INCOME.value
+    return tx_type
+
+
 @router.post(
     "/upload",
     response_model=StatementUploadResponse,
@@ -117,8 +202,13 @@ async def upload_statement(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
+    ml_service: MLService = Depends(get_ml_service),
 ) -> StatementUploadResponse:
-    """Parse a CSV/PDF statement and create transactions in bulk."""
+    """Parse a CSV/PDF statement and create transactions in bulk.
+
+    Automatically extracts clean merchant names from raw bank narrations
+    and runs ML categorization when no category is provided.
+    """
     _ = request
 
     filename = (file.filename or "").lower()
@@ -181,8 +271,38 @@ async def upload_statement(
         category = _resolve_field(row, ["category"])
         currency = _resolve_field(row, ["currency"]) or "INR"
 
+        # --- Smart extraction from raw bank narrations ---
+        if description:
+            # Auto-detect income from narration keywords
+            tx_type = _detect_income(description, tx_type)
+
+            # Extract clean merchant name if not provided
+            if not merchant_name:
+                merchant_name = _extract_merchant_name(description)
+
+            # Clean up the description for display
+            description = _clean_description(description)
+
+        # --- ML auto-categorization ---
+        predicted_category: str | None = None
+        category_confidence: float | None = None
+
         if category not in valid_categories:
             category = TransactionCategory.OTHER.value
+
+        # Run ML categorizer when category is Other and we have text
+        if category == TransactionCategory.OTHER.value and (merchant_name or description):
+            text = " ".join(filter(None, [merchant_name, description]))
+            try:
+                pred_cat, pred_conf = await ml_service.categorize_transaction(
+                    text, user_id=str(current_user.id)
+                )
+                if pred_cat is not None:
+                    predicted_category = pred_cat
+                    category_confidence = pred_conf
+                    category = pred_cat
+            except Exception:
+                pass  # Fall back to Other if ML fails
 
         transaction_date = _parse_date(_resolve_field(row, ["date", "transaction_date"]))
 
@@ -195,6 +315,8 @@ async def upload_statement(
                 category=category,
                 description=description,
                 merchant_name=merchant_name,
+                predicted_category=predicted_category,
+                category_confidence=predicted_category and category_confidence,
                 transaction_date=transaction_date,
             )
         )

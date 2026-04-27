@@ -60,7 +60,7 @@ export default function AnalyticsPage() {
   const ouchCategory = useMemo(
     () =>
       [...categoryStats]
-        .filter((s) => s.this_month > s.last_month)
+        .filter((s) => s.this_month > s.last_month && s.category !== 'Income')
         .sort((a, b) => b.this_month - a.this_month)[0],
     [categoryStats]
   );

@@ -227,10 +227,10 @@ export default function DashboardPage() {
                   </div>
                   <span
                     className={`text-sm font-semibold ${
-                      tx.transaction_type === 'credit' ? 'text-semantic-success' : 'text-text-primary'
+                      tx.transaction_type === 'income' ? 'text-semantic-success' : 'text-text-primary'
                     }`}
                   >
-                    {tx.transaction_type === 'credit' ? '+' : '-'}
+                    {tx.transaction_type === 'income' ? '+' : '-'}
                     {formatCurrency(tx.amount)}
                   </span>
                 </div>
