@@ -43,11 +43,11 @@ export function formatDate(
   }
 }
 
-export function getGaugeColor(pct: number): string {
-  if (!Number.isFinite(pct)) return '#94a3b8';
-  if (pct < 30) return '#ef4444';
-  if (pct < 70) return '#f59e0b';
-  return '#22c55e';
+export function getGaugeColor(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '#94a3b8';
+  if (amount < 200) return '#ef4444';   // Red — critical
+  if (amount < 800) return '#f59e0b';   // Yellow — caution
+  return '#22c55e';                     // Green — safe
 }
 
 const CATEGORY_COLORS: Record<string, string> = {

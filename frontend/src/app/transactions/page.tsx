@@ -9,6 +9,21 @@ import { CATEGORY_CONFIG } from '@/constants/data';
 import { formatCurrency } from '@/lib/utils';
 import type { AssistantMessage } from '@/types';
 
+function cleanMerchantDisplay(raw: string): string {
+  let text = raw
+    .replace(/^(?:UPI|IMPS|NEFT|RTGS|POS|ATM|ECS|NACH)[-/]/i, '')
+    .replace(/\d{10,}/g, '')
+    .replace(/[a-zA-Z0-9._%+-]+@[a-z]+/gi, '')
+    .replace(/[-*_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = text.split(' ');
+  const noise = new Set(['HYD', 'MUM', 'BLR', 'DEL', 'CHN', 'KOL', 'PUN', 'ORDER', 'BILLING', 'PAYMENT']);
+  while (words.length > 1 && noise.has(words[words.length - 1].toUpperCase())) words.pop();
+  text = words.join(' ');
+  return text.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') || raw;
+}
+
 const PAGE_SIZE = 20;
 
 const initialMessages: AssistantMessage[] = [
@@ -184,7 +199,7 @@ export default function TransactionsPage() {
                     {/* Merchant + meta */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text-primary truncate">
-                        {tx.merchant_name ?? tx.description ?? 'Unknown'}
+                        {tx.merchant_name || cleanMerchantDisplay(tx.description ?? 'Unknown')}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
                         {isEditing ? (

@@ -8,6 +8,26 @@ import { CATEGORY_CONFIG } from '@/constants/data';
 import { formatCurrency, getGaugeColor } from '@/lib/utils';
 import type { AssistantMessage } from '@/types';
 
+/**
+ * Clean up raw bank narrations for display when merchant_name is missing.
+ * UPI-STARBUCKS-COFFEE-JUBILEE → Starbucks Coffee
+ */
+function cleanMerchantDisplay(raw: string): string {
+  let text = raw
+    .replace(/^(?:UPI|IMPS|NEFT|RTGS|POS|ATM|ECS|NACH)[-/]/i, '')
+    .replace(/\d{10,}/g, '')
+    .replace(/[a-zA-Z0-9._%+-]+@[a-z]+/gi, '')
+    .replace(/[-*_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Strip trailing city codes / noise words
+  const words = text.split(' ');
+  const noise = new Set(['HYD', 'MUM', 'BLR', 'DEL', 'CHN', 'KOL', 'PUN', 'ORDER', 'BILLING', 'PAYMENT']);
+  while (words.length > 1 && noise.has(words[words.length - 1].toUpperCase())) words.pop();
+  text = words.join(' ');
+  return text.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') || raw;
+}
+
 // ---------------------------------------------------------------------------
 // Safe-to-Spend Gauge — semi-circular SVG speedometer
 // Color scales: Red (<₹200) → Yellow → Green (>₹800)
@@ -221,7 +241,7 @@ export default function DashboardPage() {
                       {config.icon}
                     </span>
                     <div>
-                      <p className="text-sm font-medium text-text-primary">{tx.merchant_name ?? tx.description ?? 'Unknown'}</p>
+                      <p className="text-sm font-medium text-text-primary">{tx.merchant_name || cleanMerchantDisplay(tx.description ?? 'Unknown')}</p>
                       <p className="text-xs text-text-muted">{tx.category}</p>
                     </div>
                   </div>

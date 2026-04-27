@@ -86,14 +86,29 @@ async def safe_to_spend(
     monthly_income = current_user.monthly_income or Decimal("0")
     savings_goal = current_user.savings_goal or Decimal("0")
 
+    # Auto-detect income from this month's income transactions if
+    # the user hasn't manually set monthly_income on their profile.
+    if monthly_income == 0:
+        detected_income_q = select(
+            func.coalesce(func.sum(Transaction.amount), 0)
+        ).where(
+            Transaction.user_id == current_user.id,
+            Transaction.transaction_type == TransactionType.INCOME.value,
+            extract("year", Transaction.transaction_date) == now.year,
+            extract("month", Transaction.transaction_date) == now.month,
+        )
+        monthly_income = (await db.execute(detected_income_q)).scalar_one()
+
     last_day = _last_day_of_month(now.year, now.month)
     days_remaining = max(1, (last_day - now.day) + 1)
 
-    # Recurring expenses
+    # Recurring expenses (current month only to avoid double-counting)
     recurring_q = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
         Transaction.user_id == current_user.id,
         Transaction.is_recurring.is_(True),
         Transaction.transaction_type == TransactionType.EXPENSE.value,
+        extract("year", Transaction.transaction_date) == now.year,
+        extract("month", Transaction.transaction_date) == now.month,
     )
     recurring_expenses: Decimal = (await db.execute(recurring_q)).scalar_one()
 
