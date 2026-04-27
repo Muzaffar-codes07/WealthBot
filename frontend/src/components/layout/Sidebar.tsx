@@ -8,9 +8,11 @@ import {
   BarChart3,
   Settings,
   X,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUserStore } from '@/stores/userStore';
+import { useLogout } from '@/hooks/useApi';
 
 interface NavItem {
   label: string;
@@ -22,7 +24,7 @@ const navItems: NavItem[] = [
   { label: 'Home', href: '/dashboard', icon: Gauge },
   { label: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
   { label: 'Analytics', href: '/budgets', icon: BarChart3 },
-  { label: 'Settings', href: '/investments', icon: Settings },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 interface SidebarProps {
@@ -36,6 +38,7 @@ interface SidebarProps {
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const { sidebarOpen, setSidebarOpen } = useUserStore();
+  const logout = useLogout();
 
   return (
     <>
@@ -124,6 +127,14 @@ export function Sidebar({ user }: SidebarProps) {
               {user?.plan || 'Student'}
             </p>
           </div>
+          <button
+            onClick={logout}
+            aria-label="Log out"
+            title="Log out"
+            className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </aside>

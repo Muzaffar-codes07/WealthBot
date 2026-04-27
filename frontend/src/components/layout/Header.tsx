@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 interface HeaderProps {
   title: string;
@@ -25,15 +25,8 @@ export function Header({ title, subtitle, userName, action }: HeaderProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Notification Bell */}
-        <button aria-label="Notifications" className="relative p-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg bg-background-card hover:bg-background-hover border border-border-primary transition-colors">
-          <Bell className="w-5 h-5 text-text-secondary" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-brand-primary rounded-full" />
-        </button>
-
-        {/* Action Button */}
-        {action && (
+      {action && (
+        <div className="flex items-center gap-4">
           <button
             onClick={action.onClick}
             className="btn-primary flex items-center gap-2"
@@ -41,8 +34,8 @@ export function Header({ title, subtitle, userName, action }: HeaderProps) {
             <Plus className="w-4 h-4" />
             {action.label}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </header>
   );
 }

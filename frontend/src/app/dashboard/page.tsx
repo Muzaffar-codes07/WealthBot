@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { MainLayout, Header } from '@/components/layout';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { useRequireAuth, useSafeToSpend, useTransactions } from '@/hooks';
-import { QUICK_ACTIONS, CATEGORY_CONFIG } from '@/constants/data';
+import { CATEGORY_CONFIG } from '@/constants/data';
 import { formatCurrency, getGaugeColor } from '@/lib/utils';
 import type { AssistantMessage } from '@/types';
 
@@ -188,29 +188,6 @@ export default function DashboardPage() {
             </button>
           </>
         )}
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Quick Actions — horizontal scroll                                  */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="mb-6">
-        <h3 className="text-sm font-medium text-text-secondary mb-3">Quick Actions</h3>
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          {QUICK_ACTIONS.map((action) => (
-            <button
-              key={action.id}
-              className="flex flex-col items-center gap-2 min-w-[80px] px-4 py-3 rounded-xl bg-background-card/60 backdrop-blur-sm border border-white/[0.06] hover:border-white/[0.12] transition-all"
-            >
-              <span
-                className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
-                style={{ backgroundColor: `${action.color}20` }}
-              >
-                {action.icon}
-              </span>
-              <span className="text-xs text-text-secondary whitespace-nowrap">{action.label}</span>
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}

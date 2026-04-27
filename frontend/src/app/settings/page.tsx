@@ -154,7 +154,7 @@ export default function SettingsPage() {
             <p className="text-sm font-medium text-semantic-success">
               Statement imported successfully!
             </p>
-            <p className="text-xs text-text-muted">47 transactions parsed</p>
+            <p className="text-xs text-text-muted">{uploadResult || 'Transactions parsed'}</p>
           </div>
         )}
 
