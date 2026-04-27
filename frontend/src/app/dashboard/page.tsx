@@ -68,61 +68,56 @@ function SafeToSpendGauge({
   const max = Math.ceil(rawMax / 1000) * 1000;
   const ratio = Math.min(Math.max(amount / max, 0), 1);
 
-  // SVG arc math for a 220° arc (more premium than 180°)
-  const cx = 150, cy = 140, r = 110;
-  const startAngle = 200; // degrees from top
-  const endAngle = 340;
-  const totalAngle = endAngle - startAngle;
+  // --- Semi-circle geometry (180°, flat bottom, arc on top) ---
+  const cx = 150, cy = 135, r = 105;
 
-  const polarToCart = (angleDeg: number, radius: number) => {
-    const rad = ((angleDeg - 90) * Math.PI) / 180;
-    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
-  };
+  // Angle in degrees: 0% = 180° (left), 100% = 360°/0° (right)
+  // We sweep from 180° to 360° for a top semi-circle
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const pointOnArc = (angleDeg: number, radius: number) => ({
+    x: cx + radius * Math.cos(toRad(angleDeg)),
+    y: cy + radius * Math.sin(toRad(angleDeg)),
+  });
 
-  const arcPath = (startA: number, endA: number, radius: number) => {
-    const s = polarToCart(startA, radius);
-    const e = polarToCart(endA, radius);
-    const sweep = endA - startA > 180 ? 1 : 0;
-    return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${sweep} 1 ${e.x} ${e.y}`;
-  };
+  // Full track path (180° semi-circle)
+  const trackStart = pointOnArc(180, r);
+  const trackEnd = pointOnArc(360, r);
+  const trackPath = `M ${trackStart.x} ${trackStart.y} A ${r} ${r} 0 0 1 ${trackEnd.x} ${trackEnd.y}`;
 
-  const filledEnd = startAngle + totalAngle * ratio;
+  // Filled arc path
+  const fillAngle = 180 + 180 * ratio;
+  const fillEnd = pointOnArc(fillAngle, r);
+  const largeArc = ratio > 0.5 ? 1 : 0;
+  const fillPath = `M ${trackStart.x} ${trackStart.y} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x} ${fillEnd.y}`;
 
-  // Tick marks
+  // Tick marks (6 ticks: 0%, 20%, 40%, 60%, 80%, 100%)
   const tickCount = 5;
   const ticks = Array.from({ length: tickCount + 1 }, (_, i) => {
     const frac = i / tickCount;
-    const angle = startAngle + totalAngle * frac;
-    const inner = polarToCart(angle, r - 6);
-    const outer = polarToCart(angle, r + 6);
-    const labelPos = polarToCart(angle, r + 18);
+    const angle = 180 + 180 * frac;
+    const inner = pointOnArc(angle, r - 5);
+    const outer = pointOnArc(angle, r + 5);
+    const labelPt = pointOnArc(angle, r + 18);
     const value = Math.round((max * frac) / 1000);
-    return { inner, outer, labelPos, value, angle };
+    return { inner, outer, labelPt, value };
   });
 
-  // Needle endpoint
-  const needleEnd = polarToCart(filledEnd, r - 2);
+  // Needle
+  const needlePt = pointOnArc(fillAngle, r - 2);
 
   const formattedDate = new Date(safeUntil + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   const displayAmount = Math.round(amount);
 
   return (
     <div className="flex flex-col items-center w-full">
-      <svg viewBox="0 0 300 200" className="w-full max-w-xs sm:max-w-sm" role="img" aria-label={`Safe to spend: ₹${displayAmount.toLocaleString('en-IN')}`}>
+      <svg viewBox="0 0 300 175" className="w-full max-w-sm" role="img" aria-label={`Safe to spend: ₹${displayAmount.toLocaleString('en-IN')}`}>
         <defs>
           <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={gradientFrom} />
+            <stop offset="0%" stopColor={gradientFrom} stopOpacity="0.6" />
             <stop offset="100%" stopColor={gradientTo} />
           </linearGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="softGlow">
-            <feGaussianBlur stdDeviation="8" result="blur" />
+          <filter id="arcGlow">
+            <feGaussianBlur stdDeviation="5" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -130,41 +125,37 @@ function SafeToSpendGauge({
           </filter>
         </defs>
 
-        {/* Background arc (track) */}
-        <path
-          d={arcPath(startAngle, endAngle, r)}
-          fill="none"
-          stroke="#1e293b"
-          strokeWidth="14"
-          strokeLinecap="round"
-        />
+        {/* Background track */}
+        <path d={trackPath} fill="none" stroke="#1e293b" strokeWidth="16" strokeLinecap="round" />
 
-        {/* Filled arc with gradient + glow */}
+        {/* Soft glow behind filled arc */}
         {ratio > 0.01 && (
-          <>
-            <path
-              d={arcPath(startAngle, filledEnd, r)}
-              fill="none"
-              stroke={color}
-              strokeWidth="14"
-              strokeLinecap="round"
-              opacity="0.2"
-              filter="url(#softGlow)"
-              className="transition-all duration-1000 ease-out"
-            />
-            <path
-              d={arcPath(startAngle, filledEnd, r)}
-              fill="none"
-              stroke="url(#gaugeGrad)"
-              strokeWidth="14"
-              strokeLinecap="round"
-              filter="url(#glow)"
-              className="transition-all duration-1000 ease-out"
-            />
-          </>
+          <path
+            d={fillPath}
+            fill="none"
+            stroke={color}
+            strokeWidth="18"
+            strokeLinecap="round"
+            opacity="0.15"
+            filter="url(#arcGlow)"
+            className="transition-all duration-1000 ease-out"
+          />
         )}
 
-        {/* Tick marks */}
+        {/* Filled arc */}
+        {ratio > 0.01 && (
+          <path
+            d={fillPath}
+            fill="none"
+            stroke="url(#gaugeGrad)"
+            strokeWidth="16"
+            strokeLinecap="round"
+            filter="url(#arcGlow)"
+            className="transition-all duration-1000 ease-out"
+          />
+        )}
+
+        {/* Tick marks + labels */}
         {ticks.map((t, i) => (
           <g key={i}>
             <line
@@ -175,11 +166,11 @@ function SafeToSpendGauge({
               strokeLinecap="round"
             />
             <text
-              x={t.labelPos.x} y={t.labelPos.y}
+              x={t.labelPt.x} y={t.labelPt.y}
               textAnchor="middle"
               dominantBaseline="middle"
               fill="#64748b"
-              fontSize="8"
+              fontSize="9"
               fontFamily="system-ui"
             >
               {t.value}K
@@ -187,55 +178,44 @@ function SafeToSpendGauge({
           </g>
         ))}
 
-        {/* Needle dot */}
+        {/* Needle dot at current value */}
         {ratio > 0.01 && (
           <circle
-            cx={needleEnd.x}
-            cy={needleEnd.y}
-            r="5"
+            cx={needlePt.x}
+            cy={needlePt.y}
+            r="6"
             fill={color}
-            filter="url(#glow)"
+            stroke="#0f172a"
+            strokeWidth="2"
+            filter="url(#arcGlow)"
             className="transition-all duration-1000 ease-out"
           />
         )}
 
-        {/* Center text */}
-        <text
-          x={cx} y={cy - 12}
-          textAnchor="middle"
-          fill="white"
-          fontSize="28"
-          fontWeight="bold"
-          fontFamily="system-ui"
-        >
+        {/* Center text — amount */}
+        <text x={cx} y={cy - 15} textAnchor="middle" fill="white" fontSize="30" fontWeight="bold" fontFamily="system-ui">
           ₹{displayAmount.toLocaleString('en-IN')}
         </text>
-        <text
-          x={cx} y={cy + 8}
-          textAnchor="middle"
-          fill="#94a3b8"
-          fontSize="11"
-          fontFamily="system-ui"
-        >
+        <text x={cx} y={cy + 5} textAnchor="middle" fill="#94a3b8" fontSize="12" fontFamily="system-ui">
           Safe to Spend
         </text>
       </svg>
 
       {/* Info cards below gauge */}
-      <div className="grid grid-cols-3 gap-3 w-full mt-2">
-        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+      <div className="grid grid-cols-3 gap-3 w-full mt-1">
+        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
           <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Daily Budget</span>
           <span className="text-sm font-semibold text-text-primary">
             {formatCurrency(Math.round(dailyAllowance))}
           </span>
         </div>
-        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
           <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Status</span>
           <span className="text-sm font-semibold" style={{ color }}>
             {emoji} {label}
           </span>
         </div>
-        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
           <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Days Left</span>
           <span className="text-sm font-semibold text-text-primary">
             {daysLeft}
