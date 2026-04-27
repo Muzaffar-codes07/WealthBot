@@ -34,7 +34,15 @@ export default function LoginPage() {
             loginMutation.mutate(
               { email, password },
               {
-                onSuccess: () => router.push('/dashboard'),
+              onSuccess: () => {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                  setMode('login');
+                  setError('Account created! Please log in.');
+                  return;
+                }
+                router.push('/dashboard');
+              },
                 onError: () => {
                   setMode('login');
                   setError('Account created! Please log in.');
@@ -54,7 +62,15 @@ export default function LoginPage() {
       loginMutation.mutate(
         { email, password },
         {
-          onSuccess: () => router.push('/dashboard'),
+          onSuccess: () => {
+            // Verify token was actually stored (catches silent CORS / network failures)
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+              setError('Login succeeded but session could not be established. Please try again.');
+              return;
+            }
+            router.push('/dashboard');
+          },
           onError: (err) => {
             const msg =
               (err as { response?: { data?: { detail?: string } } }).response?.data

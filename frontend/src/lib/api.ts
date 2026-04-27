@@ -3,7 +3,12 @@ import axios, { AxiosError, AxiosHeaders, type AxiosRequestConfig, type Internal
 export const AUTH_TOKEN_KEY = 'auth_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// In the browser, use relative URLs so requests go through the Next.js rewrite
+// proxy (same-origin → no CORS). During SSR, use the full backend URL directly.
+const BASE_URL =
+  typeof window !== 'undefined'
+    ? ''  // browser: relative → hits Next.js rewrite at /api/:path*
+    : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
