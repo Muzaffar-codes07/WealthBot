@@ -6,11 +6,10 @@ import { RefreshCw, Loader2, TrendingDown, Wallet, Calendar, Zap } from 'lucide-
 import { useRequireAuth, useSafeToSpend, useTransactions } from '@/hooks';
 import { CATEGORY_CONFIG } from '@/constants/data';
 import { formatCurrency } from '@/lib/utils';
-import type { AssistantMessage, SafeToSpendData } from '@/types';
+import type { AssistantMessage } from '@/types';
 
 /**
  * Clean up raw bank narrations for display when merchant_name is missing.
- * UPI-STARBUCKS-COFFEE-JUBILEE → Starbucks Coffee
  */
 function cleanMerchantDisplay(raw: string): string {
   let text = raw
@@ -28,23 +27,21 @@ function cleanMerchantDisplay(raw: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Gauge color + risk label helpers
+// Risk-level colors
 // ---------------------------------------------------------------------------
-function getGaugeInfo(riskLevel: string): { color: string; gradientFrom: string; gradientTo: string; label: string; emoji: string } {
+function getGaugeTheme(riskLevel: string) {
   switch (riskLevel) {
-    case 'low':
-      return { color: '#22c55e', gradientFrom: '#22c55e', gradientTo: '#4ade80', label: 'On Track', emoji: '✅' };
-    case 'medium':
-      return { color: '#f59e0b', gradientFrom: '#f59e0b', gradientTo: '#fbbf24', label: 'Watch It', emoji: '⚠️' };
-    case 'high':
-      return { color: '#ef4444', gradientFrom: '#ef4444', gradientTo: '#f87171', label: 'Overspending', emoji: '🔴' };
-    default:
-      return { color: '#94a3b8', gradientFrom: '#94a3b8', gradientTo: '#cbd5e1', label: 'Unknown', emoji: '❓' };
+    case 'low':    return { color: '#22c55e', bg: '#22c55e20', label: 'On Track', emoji: '✅' };
+    case 'medium': return { color: '#f59e0b', bg: '#f59e0b20', label: 'Watch It', emoji: '⚠️' };
+    case 'high':   return { color: '#ef4444', bg: '#ef444420', label: 'Overspending', emoji: '🔴' };
+    default:       return { color: '#94a3b8', bg: '#94a3b820', label: 'Unknown', emoji: '❓' };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Premium Safe-to-Spend Gauge — SVG arc with gradient, tick marks, glow
+// Safe-to-Spend Gauge — simple proven semi-circle with dashoffset
+// Uses a single <path> semi-circle from left to right, filled via dashoffset.
+// No complex trig — just a clean, reliable SVG arc.
 // ---------------------------------------------------------------------------
 function SafeToSpendGauge({
   amount,
@@ -61,179 +58,165 @@ function SafeToSpendGauge({
   safeUntil: string;
   modelUsed: string;
 }) {
-  const { color, gradientFrom, gradientTo, label, emoji } = getGaugeInfo(riskLevel);
+  const theme = getGaugeTheme(riskLevel);
+  const displayAmount = Math.round(amount);
 
-  // Dynamic max: round up to nearest nice number for scale
-  const rawMax = Math.max(amount * 1.5, 1000);
+  // Dynamic max scale
+  const rawMax = Math.max(amount * 1.4, 1000);
   const max = Math.ceil(rawMax / 1000) * 1000;
   const ratio = Math.min(Math.max(amount / max, 0), 1);
 
-  // --- Semi-circle geometry (180°, flat bottom, arc on top) ---
-  const cx = 150, cy = 135, r = 105;
+  // Arc geometry: semicircle from (30, 140) to (270, 140) with radius 120
+  // The arc path is: M 30 140 A 120 120 0 0 1 270 140
+  // Half-circumference = π × 120 ≈ 376.99
+  const radius = 120;
+  const circumference = Math.PI * radius;
+  const dashOffset = circumference * (1 - ratio);
 
-  // Angle in degrees: 0% = 180° (left), 100% = 360°/0° (right)
-  // We sweep from 180° to 360° for a top semi-circle
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const pointOnArc = (angleDeg: number, radius: number) => ({
-    x: cx + radius * Math.cos(toRad(angleDeg)),
-    y: cy + radius * Math.sin(toRad(angleDeg)),
-  });
+  const formattedDate = (() => {
+    try {
+      return new Date(safeUntil + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    } catch { return safeUntil; }
+  })();
 
-  // Full track path (180° semi-circle)
-  const trackStart = pointOnArc(180, r);
-  const trackEnd = pointOnArc(360, r);
-  const trackPath = `M ${trackStart.x} ${trackStart.y} A ${r} ${r} 0 0 1 ${trackEnd.x} ${trackEnd.y}`;
-
-  // Filled arc path
-  const fillAngle = 180 + 180 * ratio;
-  const fillEnd = pointOnArc(fillAngle, r);
-  const largeArc = ratio > 0.5 ? 1 : 0;
-  const fillPath = `M ${trackStart.x} ${trackStart.y} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x} ${fillEnd.y}`;
-
-  // Tick marks (6 ticks: 0%, 20%, 40%, 60%, 80%, 100%)
-  const tickCount = 5;
-  const ticks = Array.from({ length: tickCount + 1 }, (_, i) => {
-    const frac = i / tickCount;
-    const angle = 180 + 180 * frac;
-    const inner = pointOnArc(angle, r - 5);
-    const outer = pointOnArc(angle, r + 5);
-    const labelPt = pointOnArc(angle, r + 18);
-    const value = Math.round((max * frac) / 1000);
-    return { inner, outer, labelPt, value };
-  });
-
-  // Needle
-  const needlePt = pointOnArc(fillAngle, r - 2);
-
-  const formattedDate = new Date(safeUntil + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-  const displayAmount = Math.round(amount);
+  // Format max for display (e.g., 12000 → "12K")
+  const maxLabel = max >= 1000 ? `${(max / 1000).toFixed(0)}K` : `${max}`;
+  const midLabel = max >= 1000 ? `${(max / 2000).toFixed(0)}K` : `${max / 2}`;
 
   return (
     <div className="flex flex-col items-center w-full">
-      <svg viewBox="0 0 300 175" className="w-full max-w-sm" role="img" aria-label={`Safe to spend: ₹${displayAmount.toLocaleString('en-IN')}`}>
-        <defs>
-          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={gradientFrom} stopOpacity="0.6" />
-            <stop offset="100%" stopColor={gradientTo} />
-          </linearGradient>
-          <filter id="arcGlow">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+      {/* SVG Gauge */}
+      <div className="relative w-full max-w-[320px] sm:max-w-[360px]">
+        <svg
+          viewBox="0 0 300 170"
+          className="w-full"
+          role="img"
+          aria-label={`Safe to spend: ₹${displayAmount.toLocaleString('en-IN')}`}
+        >
+          <defs>
+            <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={theme.color} stopOpacity="0.4" />
+              <stop offset="50%" stopColor={theme.color} stopOpacity="0.8" />
+              <stop offset="100%" stopColor={theme.color} />
+            </linearGradient>
+            <filter id="gaugeGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
 
-        {/* Background track */}
-        <path d={trackPath} fill="none" stroke="#1e293b" strokeWidth="16" strokeLinecap="round" />
-
-        {/* Soft glow behind filled arc */}
-        {ratio > 0.01 && (
+          {/* Background track */}
           <path
-            d={fillPath}
+            d="M 30 140 A 120 120 0 0 1 270 140"
             fill="none"
-            stroke={color}
-            strokeWidth="18"
+            stroke="#1e293b"
+            strokeWidth="20"
             strokeLinecap="round"
-            opacity="0.15"
-            filter="url(#arcGlow)"
-            className="transition-all duration-1000 ease-out"
           />
-        )}
 
-        {/* Filled arc */}
-        {ratio > 0.01 && (
+          {/* Filled arc */}
           <path
-            d={fillPath}
+            d="M 30 140 A 120 120 0 0 1 270 140"
             fill="none"
-            stroke="url(#gaugeGrad)"
-            strokeWidth="16"
+            stroke="url(#gaugeGradient)"
+            strokeWidth="20"
             strokeLinecap="round"
-            filter="url(#arcGlow)"
-            className="transition-all duration-1000 ease-out"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            filter="url(#gaugeGlow)"
+            style={{ transition: 'stroke-dashoffset 1s ease-out' }}
           />
-        )}
 
-        {/* Tick marks + labels */}
-        {ticks.map((t, i) => (
-          <g key={i}>
-            <line
-              x1={t.inner.x} y1={t.inner.y}
-              x2={t.outer.x} y2={t.outer.y}
-              stroke="#334155"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <text
-              x={t.labelPt.x} y={t.labelPt.y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#64748b"
-              fontSize="9"
-              fontFamily="system-ui"
-            >
-              {t.value}K
-            </text>
-          </g>
-        ))}
+          {/* Scale labels */}
+          <text x="25" y="160" textAnchor="middle" fill="#475569" fontSize="10" fontFamily="system-ui">0</text>
+          <text x="150" y="12" textAnchor="middle" fill="#475569" fontSize="10" fontFamily="system-ui">{midLabel}</text>
+          <text x="275" y="160" textAnchor="middle" fill="#475569" fontSize="10" fontFamily="system-ui">{maxLabel}</text>
 
-        {/* Needle dot at current value */}
-        {ratio > 0.01 && (
-          <circle
-            cx={needlePt.x}
-            cy={needlePt.y}
-            r="6"
-            fill={color}
-            stroke="#0f172a"
-            strokeWidth="2"
-            filter="url(#arcGlow)"
-            className="transition-all duration-1000 ease-out"
-          />
-        )}
+          {/* Small tick marks at 0%, 25%, 50%, 75%, 100% */}
+          {[0, 0.25, 0.5, 0.75, 1].map((frac, i) => {
+            const angle = Math.PI * (1 - frac); // 180° to 0°
+            const ix = 150 + (radius - 14) * Math.cos(angle);
+            const iy = 140 - (radius - 14) * Math.sin(angle);
+            const ox = 150 + (radius + 2) * Math.cos(angle);
+            const oy = 140 - (radius + 2) * Math.sin(angle);
+            return (
+              <line
+                key={i}
+                x1={ix} y1={iy} x2={ox} y2={oy}
+                stroke="#334155"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            );
+          })}
 
-        {/* Center text — amount */}
-        <text x={cx} y={cy - 15} textAnchor="middle" fill="white" fontSize="30" fontWeight="bold" fontFamily="system-ui">
-          ₹{displayAmount.toLocaleString('en-IN')}
-        </text>
-        <text x={cx} y={cy + 5} textAnchor="middle" fill="#94a3b8" fontSize="12" fontFamily="system-ui">
-          Safe to Spend
-        </text>
-      </svg>
+          {/* Center amount text */}
+          <text
+            x="150" y="110"
+            textAnchor="middle"
+            fill="white"
+            fontSize="36"
+            fontWeight="700"
+            fontFamily="system-ui"
+          >
+            ₹{displayAmount.toLocaleString('en-IN')}
+          </text>
+          <text
+            x="150" y="132"
+            textAnchor="middle"
+            fill="#94a3b8"
+            fontSize="13"
+            fontFamily="system-ui"
+          >
+            Safe to Spend
+          </text>
+        </svg>
+      </div>
 
-      {/* Info cards below gauge */}
-      <div className="grid grid-cols-3 gap-3 w-full mt-1">
-        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Daily Budget</span>
-          <span className="text-sm font-semibold text-text-primary">
-            {formatCurrency(Math.round(dailyAllowance))}
-          </span>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3 w-full mt-2 px-1">
+        <div className="text-center py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+          <p className="text-[10px] uppercase tracking-widest text-text-muted mb-1">Daily Budget</p>
+          <p className="text-sm font-bold text-text-primary">{formatCurrency(Math.round(dailyAllowance))}</p>
         </div>
-        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Status</span>
-          <span className="text-sm font-semibold" style={{ color }}>
-            {emoji} {label}
-          </span>
+        <div className="text-center py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+          <p className="text-[10px] uppercase tracking-widest text-text-muted mb-1">Status</p>
+          <p className="text-sm font-bold" style={{ color: theme.color }}>{theme.emoji} {theme.label}</p>
         </div>
-        <div className="flex flex-col items-center p-2.5 rounded-lg bg-background-secondary/50">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Days Left</span>
-          <span className="text-sm font-semibold text-text-primary">
-            {daysLeft}
-          </span>
+        <div className="text-center py-2.5 px-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+          <p className="text-[10px] uppercase tracking-widest text-text-muted mb-1">Days Left</p>
+          <p className="text-sm font-bold text-text-primary">{daysLeft}</p>
         </div>
       </div>
 
-      {/* Safe until + model badge */}
-      <div className="flex items-center gap-3 mt-3">
-        <div className="px-3 py-1 rounded-full bg-background-hover/60 border border-white/[0.06] text-xs text-text-secondary flex items-center gap-1.5">
+      {/* Badges */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.06] text-xs text-text-secondary">
           <Calendar className="w-3 h-3" />
           Safe until <span className="text-semantic-success font-semibold">{formattedDate}</span>
-        </div>
+        </span>
         {modelUsed === 'xgboost' && (
-          <div className="px-2 py-1 rounded-full bg-brand-primary/10 border border-brand-primary/20 text-[10px] text-brand-primary font-medium flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-brand-primary/10 border border-brand-primary/20 text-[10px] text-brand-primary font-semibold">
             <Zap className="w-2.5 h-2.5" /> ML-Powered
-          </div>
+          </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton + error states
+// ---------------------------------------------------------------------------
+function SkeletonGauge() {
+  return (
+    <div className="flex flex-col items-center py-8 w-full">
+      <div className="w-72 h-36 rounded-2xl bg-background-hover animate-pulse" />
+      <div className="grid grid-cols-3 gap-3 w-full mt-4">
+        {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-background-hover animate-pulse" />)}
       </div>
     </div>
   );
@@ -241,27 +224,11 @@ function SafeToSpendGauge({
 
 function GaugeError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-center py-10 text-center">
-      <p className="text-sm text-text-secondary mb-3">
-        Couldn&apos;t fetch your Safe-to-Spend right now.
-      </p>
-      <button
-        onClick={onRetry}
-        className="flex items-center gap-1.5 text-sm text-brand-primary hover:underline"
-      >
+    <div className="flex flex-col items-center py-12 text-center">
+      <p className="text-sm text-text-secondary mb-3">Couldn&apos;t fetch your Safe-to-Spend right now.</p>
+      <button onClick={onRetry} className="flex items-center gap-1.5 text-sm text-brand-primary hover:underline">
         <RefreshCw className="w-3.5 h-3.5" /> Retry
       </button>
-    </div>
-  );
-}
-
-function SkeletonGauge() {
-  return (
-    <div className="flex flex-col items-center py-6 w-full">
-      <div className="w-64 h-36 rounded-xl bg-background-hover animate-pulse" />
-      <div className="grid grid-cols-3 gap-3 w-full mt-4">
-        {[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-background-hover animate-pulse" />)}
-      </div>
     </div>
   );
 }
@@ -274,7 +241,7 @@ function SkeletonTransactions() {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-background-hover animate-pulse" />
             <div>
-              <div className="w-24 h-4 rounded bg-background-hover animate-pulse" />
+              <div className="w-28 h-4 rounded bg-background-hover animate-pulse" />
               <div className="w-16 h-3 mt-1 rounded bg-background-hover animate-pulse" />
             </div>
           </div>
@@ -285,15 +252,16 @@ function SkeletonTransactions() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main Dashboard Page
+// ---------------------------------------------------------------------------
 const initialMessages: AssistantMessage[] = [
   {
     id: '1',
     type: 'suggestion',
     content: 'Your spending velocity is 12% higher than last week. Consider skipping Swiggy today — you can save ₹200!',
     timestamp: new Date().toISOString(),
-    actions: [
-      { label: 'Show me alternatives', variant: 'primary' },
-    ],
+    actions: [{ label: 'Show me alternatives', variant: 'primary' }],
   },
 ];
 
@@ -307,13 +275,12 @@ export default function DashboardPage() {
   const firstName = user?.first_name ?? 'there';
 
   const handleSendMessage = (message: string) => {
-    const newMessage: AssistantMessage = {
+    setMessages([...messages, {
       id: Date.now().toString(),
       type: 'question',
       content: message,
       timestamp: new Date().toISOString(),
-    };
-    setMessages([...messages, newMessage]);
+    }]);
   };
 
   if (authLoading) {
@@ -337,20 +304,19 @@ export default function DashboardPage() {
         subtitle="Here's your spending pulse for today."
       />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Hero: Safe-to-Spend Gauge                                          */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="glass-card flex flex-col items-center py-6 mb-6 relative overflow-hidden">
+      {/* ── Hero: Safe-to-Spend Gauge ──────────────────────────────────── */}
+      <div className="glass-card flex flex-col items-center py-8 mb-6 relative overflow-hidden">
         {stsLoading ? (
           <SkeletonGauge />
         ) : stsError || !safeToSpend ? (
           <GaugeError onRetry={() => refetchSTS()} />
         ) : (
           <>
+            {/* Background radial glow */}
             <div
-              className="absolute inset-0 opacity-10 pointer-events-none"
+              className="absolute inset-0 opacity-[0.07] pointer-events-none"
               style={{
-                background: `radial-gradient(circle at 50% 60%, ${getGaugeInfo(safeToSpend.risk_level).color}40 0%, transparent 60%)`,
+                background: `radial-gradient(ellipse 60% 50% at 50% 40%, ${getGaugeTheme(safeToSpend.risk_level).color} 0%, transparent 70%)`,
               }}
             />
 
@@ -365,7 +331,7 @@ export default function DashboardPage() {
 
             <button
               onClick={() => refetchSTS()}
-              className="mt-3 flex items-center gap-1.5 text-xs text-text-muted hover:text-brand-primary transition-colors"
+              className="mt-4 flex items-center gap-1.5 text-xs text-text-muted hover:text-brand-primary transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Recalculate
             </button>
@@ -373,11 +339,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Recommendations (from ML/heuristic)                                */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ── Smart Insights ─────────────────────────────────────────────── */}
       {safeToSpend?.recommendations && safeToSpend.recommendations.length > 0 && (
-        <div className="glass-card mb-6 p-4">
+        <div className="glass-card mb-6">
           <div className="flex items-center gap-2 mb-3">
             <TrendingDown className="w-4 h-4 text-brand-primary" />
             <h3 className="text-sm font-semibold text-text-primary">Smart Insights</h3>
@@ -393,15 +357,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Recent Activity — last 5 transactions                              */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ── Recent Activity ────────────────────────────────────────────── */}
       <div className="glass-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-text-secondary">Recent Activity</h3>
-          <a href="/transactions" className="text-xs text-brand-primary hover:underline">
-            View All →
-          </a>
+          <a href="/transactions" className="text-xs text-brand-primary hover:underline">View All →</a>
         </div>
         {txLoading ? (
           <SkeletonTransactions />
@@ -414,7 +374,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={tx.id}
-                  className="flex items-center justify-between py-2.5 px-2 -mx-2 rounded-lg hover:bg-background-hover/50 transition-colors border-b border-border-primary/50 last:border-0"
+                  className="flex items-center justify-between py-2.5 px-2 -mx-2 rounded-lg hover:bg-background-hover/50 transition-colors border-b border-border-primary/30 last:border-0"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
@@ -430,11 +390,9 @@ export default function DashboardPage() {
                       <p className="text-xs text-text-muted">{tx.category}</p>
                     </div>
                   </div>
-                  <span
-                    className={`text-sm font-semibold shrink-0 ml-3 ${
-                      tx.transaction_type === 'income' ? 'text-semantic-success' : 'text-text-primary'
-                    }`}
-                  >
+                  <span className={`text-sm font-semibold shrink-0 ml-3 ${
+                    tx.transaction_type === 'income' ? 'text-semantic-success' : 'text-text-primary'
+                  }`}>
                     {tx.transaction_type === 'income' ? '+' : '-'}
                     {formatCurrency(tx.amount)}
                   </span>
