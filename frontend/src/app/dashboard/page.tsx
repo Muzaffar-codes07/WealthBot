@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { MainLayout, Header } from '@/components/layout';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2, TrendingDown, Wallet, Calendar, Zap } from 'lucide-react';
 import { useRequireAuth, useSafeToSpend, useTransactions } from '@/hooks';
 import { CATEGORY_CONFIG } from '@/constants/data';
-import { formatCurrency, getGaugeColor } from '@/lib/utils';
-import type { AssistantMessage } from '@/types';
+import { formatCurrency } from '@/lib/utils';
+import type { AssistantMessage, SafeToSpendData } from '@/types';
 
 /**
  * Clean up raw bank narrations for display when merchant_name is missing.
@@ -20,7 +20,6 @@ function cleanMerchantDisplay(raw: string): string {
     .replace(/[-*_]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  // Strip trailing city codes / noise words
   const words = text.split(' ');
   const noise = new Set(['HYD', 'MUM', 'BLR', 'DEL', 'CHN', 'KOL', 'PUN', 'ORDER', 'BILLING', 'PAYMENT']);
   while (words.length > 1 && noise.has(words[words.length - 1].toUpperCase())) words.pop();
@@ -29,54 +28,233 @@ function cleanMerchantDisplay(raw: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Safe-to-Spend Gauge — semi-circular SVG speedometer
-// Color scales: Red (<₹200) → Yellow → Green (>₹800)
+// Gauge color + risk label helpers
 // ---------------------------------------------------------------------------
-function SafeToSpendGauge({ amount, max = 2000 }: { amount: number; max?: number }) {
-  const ratio = Math.min(amount / max, 1);
-  const color = getGaugeColor(amount);
+function getGaugeInfo(riskLevel: string): { color: string; gradientFrom: string; gradientTo: string; label: string; emoji: string } {
+  switch (riskLevel) {
+    case 'low':
+      return { color: '#22c55e', gradientFrom: '#22c55e', gradientTo: '#4ade80', label: 'On Track', emoji: '✅' };
+    case 'medium':
+      return { color: '#f59e0b', gradientFrom: '#f59e0b', gradientTo: '#fbbf24', label: 'Watch It', emoji: '⚠️' };
+    case 'high':
+      return { color: '#ef4444', gradientFrom: '#ef4444', gradientTo: '#f87171', label: 'Overspending', emoji: '🔴' };
+    default:
+      return { color: '#94a3b8', gradientFrom: '#94a3b8', gradientTo: '#cbd5e1', label: 'Unknown', emoji: '❓' };
+  }
+}
 
-  // SVG arc math for a 180° semicircle
-  const radius = 100;
-  const circumference = Math.PI * radius; // half-circle
-  const offset = circumference * (1 - ratio);
+// ---------------------------------------------------------------------------
+// Premium Safe-to-Spend Gauge — SVG arc with gradient, tick marks, glow
+// ---------------------------------------------------------------------------
+function SafeToSpendGauge({
+  amount,
+  dailyAllowance,
+  riskLevel,
+  daysLeft,
+  safeUntil,
+  modelUsed,
+}: {
+  amount: number;
+  dailyAllowance: number;
+  riskLevel: string;
+  daysLeft: number;
+  safeUntil: string;
+  modelUsed: string;
+}) {
+  const { color, gradientFrom, gradientTo, label, emoji } = getGaugeInfo(riskLevel);
+
+  // Dynamic max: round up to nearest nice number for scale
+  const rawMax = Math.max(amount * 1.5, 1000);
+  const max = Math.ceil(rawMax / 1000) * 1000;
+  const ratio = Math.min(Math.max(amount / max, 0), 1);
+
+  // SVG arc math for a 220° arc (more premium than 180°)
+  const cx = 150, cy = 140, r = 110;
+  const startAngle = 200; // degrees from top
+  const endAngle = 340;
+  const totalAngle = endAngle - startAngle;
+
+  const polarToCart = (angleDeg: number, radius: number) => {
+    const rad = ((angleDeg - 90) * Math.PI) / 180;
+    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+  };
+
+  const arcPath = (startA: number, endA: number, radius: number) => {
+    const s = polarToCart(startA, radius);
+    const e = polarToCart(endA, radius);
+    const sweep = endA - startA > 180 ? 1 : 0;
+    return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${sweep} 1 ${e.x} ${e.y}`;
+  };
+
+  const filledEnd = startAngle + totalAngle * ratio;
+
+  // Tick marks
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount + 1 }, (_, i) => {
+    const frac = i / tickCount;
+    const angle = startAngle + totalAngle * frac;
+    const inner = polarToCart(angle, r - 6);
+    const outer = polarToCart(angle, r + 6);
+    const labelPos = polarToCart(angle, r + 18);
+    const value = Math.round((max * frac) / 1000);
+    return { inner, outer, labelPos, value, angle };
+  });
+
+  // Needle endpoint
+  const needleEnd = polarToCart(filledEnd, r - 2);
+
+  const formattedDate = new Date(safeUntil + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const displayAmount = Math.round(amount);
 
   return (
-    <div className="flex flex-col items-center">
-      <svg
-        viewBox="0 0 240 140"
-        className="w-56 sm:w-72 h-32 sm:h-40"
-        role="img"
-        aria-label={`Safe to spend today: ${formatCurrency(amount)}`}
-      >
-        {/* Track */}
+    <div className="flex flex-col items-center w-full">
+      <svg viewBox="0 0 300 200" className="w-full max-w-xs sm:max-w-sm" role="img" aria-label={`Safe to spend: ₹${displayAmount.toLocaleString('en-IN')}`}>
+        <defs>
+          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={gradientFrom} />
+            <stop offset="100%" stopColor={gradientTo} />
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="softGlow">
+            <feGaussianBlur stdDeviation="8" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Background arc (track) */}
         <path
-          d="M 20 130 A 100 100 0 0 1 220 130"
+          d={arcPath(startAngle, endAngle, r)}
           fill="none"
           stroke="#1e293b"
-          strokeWidth="18"
+          strokeWidth="14"
           strokeLinecap="round"
         />
-        {/* Filled arc */}
-        <path
-          d="M 20 130 A 100 100 0 0 1 220 130"
-          fill="none"
-          stroke={color}
-          strokeWidth="18"
-          strokeLinecap="round"
-          strokeDasharray={`${circumference}`}
-          strokeDashoffset={`${offset}`}
-          className="transition-all duration-700 ease-out"
-          style={{ filter: `drop-shadow(0 0 8px ${color}40)` }}
-        />
-        {/* Center amount */}
-        <text x="120" y="105" textAnchor="middle" className="fill-white text-4xl font-bold" fontSize="36" aria-hidden="true">
-          ₹{amount.toLocaleString('en-IN')}
+
+        {/* Filled arc with gradient + glow */}
+        {ratio > 0.01 && (
+          <>
+            <path
+              d={arcPath(startAngle, filledEnd, r)}
+              fill="none"
+              stroke={color}
+              strokeWidth="14"
+              strokeLinecap="round"
+              opacity="0.2"
+              filter="url(#softGlow)"
+              className="transition-all duration-1000 ease-out"
+            />
+            <path
+              d={arcPath(startAngle, filledEnd, r)}
+              fill="none"
+              stroke="url(#gaugeGrad)"
+              strokeWidth="14"
+              strokeLinecap="round"
+              filter="url(#glow)"
+              className="transition-all duration-1000 ease-out"
+            />
+          </>
+        )}
+
+        {/* Tick marks */}
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line
+              x1={t.inner.x} y1={t.inner.y}
+              x2={t.outer.x} y2={t.outer.y}
+              stroke="#334155"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            <text
+              x={t.labelPos.x} y={t.labelPos.y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="#64748b"
+              fontSize="8"
+              fontFamily="system-ui"
+            >
+              {t.value}K
+            </text>
+          </g>
+        ))}
+
+        {/* Needle dot */}
+        {ratio > 0.01 && (
+          <circle
+            cx={needleEnd.x}
+            cy={needleEnd.y}
+            r="5"
+            fill={color}
+            filter="url(#glow)"
+            className="transition-all duration-1000 ease-out"
+          />
+        )}
+
+        {/* Center text */}
+        <text
+          x={cx} y={cy - 12}
+          textAnchor="middle"
+          fill="white"
+          fontSize="28"
+          fontWeight="bold"
+          fontFamily="system-ui"
+        >
+          ₹{displayAmount.toLocaleString('en-IN')}
         </text>
-        <text x="120" y="128" textAnchor="middle" className="fill-slate-400 text-sm" fontSize="13" aria-hidden="true">
+        <text
+          x={cx} y={cy + 8}
+          textAnchor="middle"
+          fill="#94a3b8"
+          fontSize="11"
+          fontFamily="system-ui"
+        >
           Safe to Spend
         </text>
       </svg>
+
+      {/* Info cards below gauge */}
+      <div className="grid grid-cols-3 gap-3 w-full mt-2">
+        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Daily Budget</span>
+          <span className="text-sm font-semibold text-text-primary">
+            {formatCurrency(Math.round(dailyAllowance))}
+          </span>
+        </div>
+        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Status</span>
+          <span className="text-sm font-semibold" style={{ color }}>
+            {emoji} {label}
+          </span>
+        </div>
+        <div className="flex flex-col items-center p-2 rounded-lg bg-background-secondary/50">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Days Left</span>
+          <span className="text-sm font-semibold text-text-primary">
+            {daysLeft}
+          </span>
+        </div>
+      </div>
+
+      {/* Safe until + model badge */}
+      <div className="flex items-center gap-3 mt-3">
+        <div className="px-3 py-1 rounded-full bg-background-hover/60 border border-white/[0.06] text-xs text-text-secondary flex items-center gap-1.5">
+          <Calendar className="w-3 h-3" />
+          Safe until <span className="text-semantic-success font-semibold">{formattedDate}</span>
+        </div>
+        {modelUsed === 'xgboost' && (
+          <div className="px-2 py-1 rounded-full bg-brand-primary/10 border border-brand-primary/20 text-[10px] text-brand-primary font-medium flex items-center gap-1">
+            <Zap className="w-2.5 h-2.5" /> ML-Powered
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -99,9 +277,11 @@ function GaugeError({ onRetry }: { onRetry: () => void }) {
 
 function SkeletonGauge() {
   return (
-    <div className="flex flex-col items-center py-10">
-      <div className="w-72 h-40 rounded-xl bg-background-hover animate-pulse" />
-      <div className="mt-4 w-40 h-6 rounded-full bg-background-hover animate-pulse" />
+    <div className="flex flex-col items-center py-6 w-full">
+      <div className="w-64 h-36 rounded-xl bg-background-hover animate-pulse" />
+      <div className="grid grid-cols-3 gap-3 w-full mt-4">
+        {[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-background-hover animate-pulse" />)}
+      </div>
     </div>
   );
 }
@@ -140,7 +320,7 @@ const initialMessages: AssistantMessage[] = [
 export default function DashboardPage() {
   const { user, isLoading: authLoading } = useRequireAuth();
   const { data: safeToSpend, isLoading: stsLoading, isError: stsError, refetch: refetchSTS } = useSafeToSpend();
-  const { data: txPage, isLoading: txLoading } = useTransactions({ limit: 3 });
+  const { data: txPage, isLoading: txLoading } = useTransactions({ limit: 5 });
   const [messages, setMessages] = useState<AssistantMessage[]>(initialMessages);
 
   const recentTransactions = txPage?.data ?? [];
@@ -180,7 +360,7 @@ export default function DashboardPage() {
       {/* ------------------------------------------------------------------ */}
       {/* Hero: Safe-to-Spend Gauge                                          */}
       {/* ------------------------------------------------------------------ */}
-      <div className="glass-card flex flex-col items-center py-10 mb-6 relative overflow-hidden">
+      <div className="glass-card flex flex-col items-center py-6 mb-6 relative overflow-hidden">
         {stsLoading ? (
           <SkeletonGauge />
         ) : stsError || !safeToSpend ? (
@@ -190,15 +370,18 @@ export default function DashboardPage() {
             <div
               className="absolute inset-0 opacity-10 pointer-events-none"
               style={{
-                background: `radial-gradient(circle at 50% 80%, ${getGaugeColor(safeToSpend.amount)}40 0%, transparent 60%)`,
+                background: `radial-gradient(circle at 50% 60%, ${getGaugeInfo(safeToSpend.risk_level).color}40 0%, transparent 60%)`,
               }}
             />
 
-            <SafeToSpendGauge amount={safeToSpend.amount} />
-
-            <div className="mt-4 px-4 py-1.5 rounded-full bg-background-hover/60 border border-white/[0.06] text-sm text-text-secondary">
-              Safe until <span className="text-semantic-success font-semibold">{new Date(safeToSpend.safe_until + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-            </div>
+            <SafeToSpendGauge
+              amount={safeToSpend.amount}
+              dailyAllowance={safeToSpend.daily_allowance}
+              riskLevel={safeToSpend.risk_level}
+              daysLeft={safeToSpend.days_until_payday}
+              safeUntil={safeToSpend.safe_until}
+              modelUsed={safeToSpend.model_used}
+            />
 
             <button
               onClick={() => refetchSTS()}
@@ -211,7 +394,27 @@ export default function DashboardPage() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Recent Activity — last 3 transactions                              */}
+      {/* Recommendations (from ML/heuristic)                                */}
+      {/* ------------------------------------------------------------------ */}
+      {safeToSpend?.recommendations && safeToSpend.recommendations.length > 0 && (
+        <div className="glass-card mb-6 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingDown className="w-4 h-4 text-brand-primary" />
+            <h3 className="text-sm font-semibold text-text-primary">Smart Insights</h3>
+          </div>
+          <div className="space-y-2">
+            {safeToSpend.recommendations.map((tip, i) => (
+              <p key={i} className="text-xs text-text-secondary flex items-start gap-2">
+                <Wallet className="w-3 h-3 mt-0.5 text-text-muted shrink-0" />
+                {tip}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Recent Activity — last 5 transactions                              */}
       {/* ------------------------------------------------------------------ */}
       <div className="glass-card">
         <div className="flex items-center justify-between mb-4">
@@ -225,28 +428,30 @@ export default function DashboardPage() {
         ) : recentTransactions.length === 0 ? (
           <p className="text-sm text-text-muted text-center py-6">No transactions yet.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {recentTransactions.map((tx) => {
               const config = CATEGORY_CONFIG[tx.category] || CATEGORY_CONFIG.Other;
               return (
                 <div
                   key={tx.id}
-                  className="flex items-center justify-between py-2 border-b border-border-primary last:border-0"
+                  className="flex items-center justify-between py-2.5 px-2 -mx-2 rounded-lg hover:bg-background-hover/50 transition-colors border-b border-border-primary/50 last:border-0"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <span
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm"
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm shrink-0"
                       style={{ backgroundColor: `${config.color}20` }}
                     >
                       {config.icon}
                     </span>
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">{tx.merchant_name || cleanMerchantDisplay(tx.description ?? 'Unknown')}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary truncate">
+                        {tx.merchant_name || cleanMerchantDisplay(tx.description ?? 'Unknown')}
+                      </p>
                       <p className="text-xs text-text-muted">{tx.category}</p>
                     </div>
                   </div>
                   <span
-                    className={`text-sm font-semibold ${
+                    className={`text-sm font-semibold shrink-0 ml-3 ${
                       tx.transaction_type === 'income' ? 'text-semantic-success' : 'text-text-primary'
                     }`}
                   >

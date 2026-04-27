@@ -165,9 +165,9 @@ async def safe_to_spend(
     safe_until = f"{now.year}-{now.month:02d}-{last_day:02d}"
 
     response = SafeToSpendResponse(
-        amount=result["amount"],
+        amount=result["amount"].quantize(Decimal("1")),
         safe_until=safe_until,
-        daily_allowance=result["daily_allowance"],
+        daily_allowance=result["daily_allowance"].quantize(Decimal("1")),
         risk_level=result["risk_level"],
         days_until_payday=days_remaining,
         model_used=model_used,

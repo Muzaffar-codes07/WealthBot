@@ -99,6 +99,9 @@ export function useSafeToSpend() {
       };
     },
     enabled: !!getToken(),
+    refetchInterval: 2 * 60 * 1000, // Re-fetch every 2 minutes
+    refetchOnWindowFocus: true,      // Re-fetch when user returns to tab
+    staleTime: 60 * 1000,            // Consider stale after 1 minute
   });
 }
 
